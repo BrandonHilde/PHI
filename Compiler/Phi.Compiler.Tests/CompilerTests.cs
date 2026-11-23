@@ -292,7 +292,7 @@ namespace Phi.Compiler.Tests
         public void AStrArrayIsntTextWhereAPtrU8Goes()
         {
             AssertError(Boot("str days: 'Mon' 'Tue';\ncall Show: days;\n[Show: ptr<u8> text: 0;]\n[end]"),
-                        "parameter 'text' is text (a ptr<u8>), but 'days' is a str array");
+                        "parameter 'text' of Show is text (a ptr<u8>), but 'days' is a str array");
 
             // one element is text; an array of literals doesn't warn
             CompileResult element = Compile(Boot("str days: 'Mon' 'Tue';\ncall Show: days:0;\n[Show: ptr<u8> text: 0;]\n[end]"));

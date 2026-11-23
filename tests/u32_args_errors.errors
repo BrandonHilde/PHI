@@ -1,8 +1,8 @@
-9:13: error: parameter 'value' is an int, and 2147483648 is too big for one; write `as int` for the same bits, or take a u32
+9:13: error: parameter 'value' of Take is an int, and 2147483648 is too big for one; write `as int` for the same bits, or take a u32
 10:9: error: 'a' is an int, and 2147483648 is too big for one; write `as int` for the same bits, or take a u32
 11:7: error: 'a' is an int, and 4294967295 is too big for one; write `as int` for the same bits, or take a u32
 12:13: error: argument 1 of kept is an int, and 4294967295 is too big for one; write `as int` for the same bits, or take a u32
-14:15: error: parameter 'value' is a u32, and -1 can't be one; write `as u32` for the same bits, or take an int
+14:15: error: parameter 'value' of TakeU is a u32, and -1 can't be one; write `as u32` for the same bits, or take an int
 15:9: error: 'b' is a u32, and -1 can't be one; write `as u32` for the same bits, or take an int
 16:7: error: 'b' is a u32, and -5 can't be one; write `as u32` for the same bits, or take an int
 17:15: error: argument 1 of keptU is a u32, and -1 can't be one; write `as u32` for the same bits, or take an int

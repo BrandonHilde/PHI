@@ -1,2 +1,2 @@
-10:12: error: parameter 'list' is an array of ints, and this is a u8 array
-11:12: error: parameter 'list' is an array of ints, and this is an int
+10:12: error: parameter 'list' of Sum is an array of ints, and this is a u8 array
+11:12: error: parameter 'list' of Sum is an array of ints, and this is an int
