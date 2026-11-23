@@ -5341,6 +5341,16 @@ namespace Phi.Compiler.Semantics
                     if (arguments.Count > count)
                         Error(arguments[count].Span, $"{method.Name} takes {Plural(count - hidden, "argument")} but was given {arguments.Count - hidden}");
 
+                    // (a built-in answered by its system's own PHI method, as OS.ThreadStart is on macOS,
+                    // takes what the built-in takes, on every system: the method's defaults aren't the
+                    // built-in's, and OS.ThreadStart: m 0 with no stack ran on none)
+                    if (Builtins.Find(calleeName) is BuiltinFunction asBuiltin && asBuiltin.OnHost == method.Name
+                        && arguments.Count != asBuiltin.Parameters.Length)
+                    {
+                        int want = asBuiltin.Parameters.Length;
+                        string expected = want == 0 ? "no arguments" : $"{Plural(want, "argument")} ({string.Join(" ", asBuiltin.Parameters)})";
+                        Error(calleeSpan, $"{asBuiltin.Name} takes {expected} but was given {arguments.Count}");
+                    }
                     WarnArgumentLeftOut(method, arguments, calleeSpan);
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
                     {

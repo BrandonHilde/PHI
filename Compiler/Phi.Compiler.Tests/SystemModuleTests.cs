@@ -188,6 +188,18 @@ namespace Phi.Compiler.Tests
             Assert.Contains(error, Errors(result));
         }
 
+        [Theory]
+        [InlineData(Host.MacOS)]
+        [InlineData(Host.Linux64)]
+        [InlineData(Host.Windows64)]
+        public void ABuiltInAnsweredByItsSystemsMethodTakesWhatTheBuiltInTakes(Host host)
+        {
+            // HostThreads.ThreadStart has defaults for the stack; OS.ThreadStart doesn't. 1.0 built a
+            // two-argument call for macOS, and the thread crashed on no stack (PHI OS: an error)
+            CompileResult result = Build(host, ("main.phi", "phi.Test:Program\n{\n int t: (OS.ThreadStart: addr Body 0);\n exit 0;\n [Body: int unused: 0;]\n [end]\n}\n"));
+            Assert.Contains("OS.ThreadStart takes 4 arguments (method value stackBottom stackTop) but was given 2", Errors(result));
+        }
+
         [Fact]
         public void AnOutsideFunctionIsCalledOnlyFromItsModule()
         {
