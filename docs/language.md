@@ -3786,11 +3786,16 @@ if (IsReady: port)
   all of memory), or a `u32` of 2 billion or more going to an `int` (it would be negative, and
   get past a check like `if n > 0`). That goes for a parameter, a variable, a field, an
   element, a result and a new array's size, and it can be caught
-  ([Errors: throw and throws](#errors-throw-and-throws)).
+  ([Errors: throw and throws](#errors-throw-and-throws)). The error says where the number was
+  going: the parameter and its method, the variable, the field.
+- **A call with fewer arguments than parameters** fills them from the left, the rest taking
+  their defaults. Where an argument plainly isn't its parameter's kind (a `u32` to an `int`, a
+  pointer to a number) and is just the next one's, the build warns that one may be missing
+  before it.
 
   ```phi
   int n: -1;
-  if call Take: n throws err        # a negative number can't be a u32 on line 2 in game.phi
+  if call Take: n throws err        # a negative number can't be a u32 (parameter 'count' of Take) on line 2 in game.phi
       log err '\n';
   ;;
   call Take: n as u32;              # `as` keeps the same bits, and checks nothing

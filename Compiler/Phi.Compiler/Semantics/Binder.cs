@@ -5341,6 +5341,7 @@ namespace Phi.Compiler.Semantics
                     if (arguments.Count > count)
                         Error(arguments[count].Span, $"{method.Name} takes {Plural(count - hidden, "argument")} but was given {arguments.Count - hidden}");
 
+                    WarnArgumentLeftOut(method, arguments, calleeSpan);
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
                     {
                         WarnStrLengthAsSize(arguments[i], method.Parameters[i].Name);
@@ -5349,7 +5350,7 @@ namespace Phi.Compiler.Semantics
                         // (and a hash is of a number's bits, whatever its sign)
                         arguments[i] = Builtins.Find(calleeName) != null || hashed
                             ? Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'")
-                            : ConvertChecked(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
+                            : ConvertChecked(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}' of {method.Decl.Name}");
                     }
 
                     return method;
@@ -6934,6 +6935,34 @@ namespace Phi.Compiler.Semantics
         /// an error here, and anything else that might not is checked when it runs, an error that
         /// `if call ... throws` can catch. `as int` and `as u32` keep the same bits and check nothing.
         /// </summary>
+        /// <summary>
+        /// A call with fewer arguments than its method has parameters fills them from the left, the
+        /// rest taking their defaults; so one left out in the middle moves each after it up one. When
+        /// an argument plainly isn't its parameter's kind (a u32 to an int, a pointer to a number, a
+        /// floating point number to a whole one) and is just the next one's, that's the likely reason.
+        /// </summary>
+        void WarnArgumentLeftOut(MethodSymbol method, List<Expr> arguments, Span at)
+        {
+            int count = Math.Min(method.Parameters.Count, method.Decl.Parameters.Count);
+            if (arguments.Count >= count) return;
+            for (int i = 0; i < arguments.Count && i + 1 < count; i++)
+            {
+                PhiType given = arguments[i].Type, own = method.Parameters[i].Type, next = method.Parameters[i + 1].Type;
+                if (given.IsError || own.IsError || next.IsError) continue;
+                // (math on a pointer is typed as a number but keeps the whole address: a pointer here)
+                bool pointer = given.IsPointer || PointerMath(arguments[i]);
+                bool unlike = given == PhiType.U32 && own == PhiType.Int && !pointer
+                              || pointer != own.IsPointer && (pointer || own.IsPointer) && !own.IsString && !given.IsString
+                              || given.IsFloat && !own.IsFloat && own.IsNumeric;
+                bool likeNext = pointer ? next.IsPointer : given == next;
+                if (!unlike || !likeNext) continue;
+                diagnostics.Warning(file, arguments[i].Span,
+                    $"{method.Decl.Name} has {Plural(count, "parameter")} and this call gives {arguments.Count}, so '{Written(arguments[i])}' ({A(given)}) goes to " +
+                    $"'{method.Parameters[i].Name}' ({A(own)}), where it would fit '{method.Parameters[i + 1].Name}' ({A(next)}); is an argument missing before it?");
+                return;
+            }
+        }
+
         Expr ConvertChecked(Expr e, PhiType target, string what)
         {
             bool toInt = target == PhiType.Int && e.Type == PhiType.U32;
@@ -6949,7 +6978,7 @@ namespace Phi.Compiler.Semantics
                 return Convert(e, target, what);
             }
             if (toInt ? FitsAnInt(e) : NeverNegative(e)) return Convert(e, target, what);
-            return new CheckedNumberExpr { Operand = Convert(e, target, what), Span = e.Span, Type = target };
+            return new CheckedNumberExpr { Operand = Convert(e, target, what), Span = e.Span, Type = target, What = what };
         }
 
         /// <summary>A signed number that's known not to be negative: a constant, how long something is, or what a mask leaves.</summary>

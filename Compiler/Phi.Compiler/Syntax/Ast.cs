@@ -1148,6 +1148,9 @@ namespace Phi.Compiler.Syntax
     public sealed class CheckedNumberExpr : Expr
     {
         public Expr Operand { get; set; } = null!;
+
+        /// <summary>Where the number goes ("parameter 'h' of Edge"), for the error when it can't.</summary>
+        public string What { get; set; } = "";
     }
 
     /// <summary>sizeof Type   or   sizeof variable   (bytes, known when the program is built)</summary>

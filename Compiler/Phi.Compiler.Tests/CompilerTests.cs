@@ -236,6 +236,27 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
         }
 
+        [Fact]
+        public void AnArgumentLeftOutInTheMiddleWarns()
+        {
+            const string edge = "[Edge: int x: 0; int y: 0; int h: 0; u32 color: 0; int z: 0;]\n[end]\n";
+            CompileResult shifted = Compile(Kernel("u32 shade: 7;\nint x: 1;\nint h: 2;\ncall Edge: x h shade 4;\n" + edge));
+            Assert.True(shifted.Success, string.Join("\n", shifted.Diagnostics));
+            Assert.Contains(shifted.Diagnostics, d => d.Severity == Severity.Warning
+                && d.Message.Contains("Edge has 5 parameters and this call gives 4, so 'shade' (a u32) goes to 'h' (an int), where it would fit 'color'"));
+
+            // a call that leaves off only its last ones, or gives each its own kind, doesn't warn
+            // (nor does math on a pointer, typed as a number but a whole address, going to a pointer)
+            const string fetch = "[Fetch: ptr<u8> url: 0; u32 n: 0; int kind: 0; int more: 0;]\n[end]\n";
+            foreach (string call in new[] { "call Edge: 1 2;", "call Edge: 1 2 3 shade;", "call Edge: 1 2 3 shade 5;",
+                                            "ptr<u8> text: 0;\nu32 from: 2;\ncall Fetch: text + from shade 1;\n" + fetch })
+            {
+                CompileResult fine = Compile(Kernel("u32 shade: 7;\n" + call + "\n" + edge));
+                Assert.True(fine.Success, string.Join("\n", fine.Diagnostics));
+                Assert.DoesNotContain(fine.Diagnostics, d => d.Severity == Severity.Warning);
+            }
+        }
+
         [Theory]
         [InlineData("int n: 42;\nu64 a: 1 << n;", "this shift is done in 32 bits and its answer then made a u64")]
         [InlineData("int n: 3;\ni64 a: n << 31;", "(n as i64) << 31")]

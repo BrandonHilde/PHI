@@ -3772,12 +3772,19 @@ namespace Phi.Compiler.CodeGen
         /// top bit is set if it's a negative number going to a u32, or a u32 of 2 billion or more
         /// going to an int, and either comes out as a different number.
         /// </summary>
+        /// <summary>What a checked conversion says when it stops: what it was, and where it was going.</summary>
+        internal static string CheckedNumberText(CheckedNumberExpr check)
+        {
+            string text = check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int";
+            return check.What.Length > 0 ? $"{text} ({check.What})" : text;
+        }
+
         void EmitNumberCheck(CheckedNumberExpr check)
         {
             string ok = NewLabel("numberok");
             Emit("test eax, eax");
             Emit($"jns {ok}");
-            EmitStop(check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int", check, ErrorConvert);
+            EmitStop(CheckedNumberText(check), check, ErrorConvert);
             Label(ok);
         }
 

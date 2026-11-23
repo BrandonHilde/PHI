@@ -2226,7 +2226,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Value = v,
                         At = check,
                         Held = HeldStores(),
-                        Text = check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int",
+                        Text = X86Generator.CheckedNumberText(check),
                     });
                     return v;
                 }
