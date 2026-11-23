@@ -41,7 +41,7 @@ OWN_RANGES equ 8               ; ranges of system calls with a lock of their own
 THREAD_BLOCK equ 1024          ; a program thread's block (its throw.asm's PHI_THREAD_SIZE)
 
 USER_BASE     equ 0x40000000
-USER_TOP      equ 0x40400000
+USER_TOP      equ 0x41000000    ; (proc.process's: 0x40400000 up to 1.0)
 USER_STACK_BOTTOM equ USER_TOP - 65536  ; a program's first stack (process.phi's STACK_PAGES)
 USER_SPARE_TOP    equ USER_STACK_BOTTOM - 8192  ; under its gap, the spare stack (SPARE_PAGES, GAP_PAGES)
 USER_THREAD_TOP   equ 1024 + 8          ; what's above a thread's spare stack: its block, its method and value

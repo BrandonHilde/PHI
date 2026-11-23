@@ -74,7 +74,7 @@ SYS_MAIL_CLOSE equ 101
 SYS_NOW        equ 43
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
-ARGUMENTS     equ 0x403F0000
+ARGUMENTS     equ 0x40FF0000    ; the bottom of a program's stack (proc.process's USER_TOP - 64 KB)
 
 ; ebx = exit code
 phi_exit:

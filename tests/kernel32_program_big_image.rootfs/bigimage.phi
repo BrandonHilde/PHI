@@ -1,0 +1,11 @@
+# 6 MB of its own variables, written and read back at both ends and in the middle
+phi.BigImage:Program
+{
+	u8 big[6000000];
+	big:0 is 1;
+	big:3000000 is 2;
+	big:5999999 is 3;
+	log 'its variables: ' big:0 ' ' big:3000000 ' ' big:5999999 '\n';
+	log 'its command line: ' (OS.Arguments) '\n';
+	exit 0;
+}

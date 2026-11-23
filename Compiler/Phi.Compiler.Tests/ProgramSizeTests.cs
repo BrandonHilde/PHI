@@ -29,11 +29,20 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AProgramOf4MbOrMoreIsBuilt()
+        {
+            // past 1.0's 4,112,384 bytes (code, variables and stack shared one 4 MB page table)
+            BuildResult result = BuildProgram(260);         // 4,259,840 bytes of variables alone
+            Assert.True(result.Success, string.Join("\n", result.Errors));
+            Assert.True(File.Exists(result.ProgramPath));
+        }
+
+        [Fact]
         public void AProgramTooBigToStartIsAnError()
         {
-            BuildResult result = BuildProgram(260);         // 4,259,840 bytes of variables alone
+            BuildResult result = BuildProgram(1030);        // 16,875,520 bytes of variables alone
             Assert.False(result.Success);
-            Assert.Contains(result.Errors, e => e.Contains("more than a PHI OS program can be (4,112,384"));
+            Assert.Contains(result.Errors, e => e.Contains("more than a PHI OS program can be (16,695,296"));
             Assert.False(File.Exists(result.ProgramPath));
         }
     }

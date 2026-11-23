@@ -386,7 +386,7 @@ bytes, and 1 GB in all (16,384 in a 16-bit program, whose memory is 64 KB). Wher
 decides what a big one costs:
 
 - a class's variable is part of the program's file, zeros and all, so `u8 big[1000000];`
-  there makes the file 1 MB bigger (a PHI OS program can be 4 MB);
+  there makes the file 1 MB bigger (a PHI OS program can be almost 16 MB);
 - a method's variable is on the stack, as far as a method's variables can go (see
   [Methods](#methods));
 - in an object (`new`), it's on the heap with the rest of the object.
@@ -3124,7 +3124,7 @@ phi.Kernel:Kernel
 ```
 
 Each program has its own memory: its code and data at `0x40000000`, a 64 KB stack ending
-at `0x40400000`, a heap above that, and nothing else it can reach. The timer shares the CPU between running
+at `0x41000000`, a heap above that, and nothing else it can reach. The timer shares the CPU between running
 programs. A program that touches memory that isn't its own gets an error it can catch; if it
 doesn't, it's stopped with the error's message (`PHI: memory that is not there was used, or the
 CPU refused an instruction on line 5 in crash.phi`) and the kernel carries on.

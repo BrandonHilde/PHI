@@ -409,7 +409,8 @@ namespace Phi.Cli
         /// page table, 1024 pages, and keeps 20 of them for the stack (16), the gap under it (2) and
         /// the spare its running out becomes an error on (2). See Process.Spawn.
         /// </summary>
-        public const int ProgramMost = (1024 - 16 - 2 - 2) * 4096;
+        /// <summary>A PHI OS program's code and variables: 16 MB less its stack, the gap and the spare stack (proc.process).</summary>
+        public const int ProgramMost = (4096 - 16 - 2 - 2) * 4096;
 
         /// <summary>
         /// A macOS program's assembly (NAME.s) made a Mach-O executable: clang -c, then clang to

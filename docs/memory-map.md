@@ -120,12 +120,13 @@ With `proc.process`, the kernel sets up a GDT of its own (kernel code `0x08`, ke
 | Address | Contents |
 |---|---|
 | `0x00000000`–`0x3FFFFFFF` | the kernel's memory, mapped but not reachable from user mode |
-| `0x40000000` … | the program's code, then its variables from the next 4 KB boundary (`NAME.BIN`, loaded as is): at most 4,112,384 bytes, the room left below the stack, its gap and its spare pages (`phi build` refuses a bigger program) |
-| `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`); the first 256 bytes hold its command line (`OS.Arguments`) |
-| `0x40400000` … `0xBFFFFFFF` | its heap, mapped a page at a time as it grows (`OS.Grow`, system call 37) as far as the program's limit (`Heap.Limit`: 128 MB unless it says otherwise) and the memory that's free; a page table is added for each 4 MB it reaches. (Up to 1.0 it stopped at `0x47FFFFFF`, 124 MB.) |
+| `0x40000000` … | the program's code, then its variables from the next 4 KB boundary (`NAME.BIN`, loaded as is): at most 16,695,296 bytes, the room left below the stack, its gap and its spare pages (`phi build` refuses a bigger program; up to 1.0, 4,112,384) |
+| `0x40FF0000`–`0x40FFFFFF` | its 64 KB stack (`esp` starts at `0x41000000`); the first 256 bytes hold its command line (`OS.Arguments`) |
+| `0x41000000` … `0xBFFFFFFF` | its heap, mapped a page at a time as it grows (`OS.Grow`, system call 37) as far as the program's limit (`Heap.Limit`: 128 MB unless it says otherwise) and the memory that's free; a page table is added for each 4 MB it reaches. (Up to 1.0 it stopped at `0x47FFFFFF`, 124 MB.) |
 
 Everything in between, and above, is unmapped. The program's page directory copies the
-kernel's and adds one page table for these 4 MB; each program also has an 8 KB kernel
+kernel's and adds a page table for each 4 MB of these 16 MB that the program uses (its code
+and variables, and its stack at the top); each program also has an 8 KB kernel
 stack, which the TSS points the CPU at when an interrupt arrives in user mode. Up to 15
 programs can exist at once.
 

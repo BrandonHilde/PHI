@@ -1,0 +1,16 @@
+# needs 256 MB of memory: a program of 6 MB, and the kernel's own
+# A PHI OS program's code and variables can be almost 16 MB (proc.process's USER_TOP is
+# 0x41000000; kernel32_program_big_image.rootfs). Up to 1.0 they shared one 4 MB page table with
+# the stack, and phi build refused a program over 4,112,384 bytes: PHI OS's browser met that
+# with its layout's tables. Its command line (at the bottom of the stack, which moved up with
+# it) still reaches it, and the kernel has all its memory back after.
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int code: (Process.Wait: (Process.Spawn: 'BIGIMAGE.BIN' 'one two'));
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

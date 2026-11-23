@@ -4,7 +4,7 @@
 #   free buffer;
 #
 # A program that uses new or free gets this file automatically. The heap starts
-# empty, right above the program's stack (0x40400000), and grows when nothing in
+# empty, right above the program's stack (0x41000000), and grows when nothing in
 # it fits: it asks the kernel for more with OS.Grow, at least 64 KB at a time, up
 # to the program's limit (Limit, below: 128 MB in a 32-bit program unless it says
 # otherwise), and up to what the system has free. Blocks are

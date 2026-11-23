@@ -9,7 +9,7 @@
 #
 # A program (classes that inherit Program; `phi build` compiles any .phi file in
 # a kernel's rootfs into NAME.BIN) runs in ring 3 with its own address space:
-# its code and data at 0x40000000, a 64 KB stack ending at 0x40400000, a heap
+# its code and data at 0x40000000, a 64 KB stack ending at 0x41000000, a heap
 # that grows up from there (OS.Grow, which memory.heap uses for new) as far as
 # the program asks (Heap.Limit) and the machine has memory, and the
 # kernel's memory mapped but out of reach. It talks to the kernel through
@@ -80,7 +80,11 @@ struct.SyscallFrame
 phi.Process:Kernel
 {
 	const u32 USER_BASE: 0x40000000;
-	const u32 USER_TOP: 0x40400000;
+	# a program's code and variables, then its stack at the top: 16 MB, in four page tables
+	# (only those it uses are made). Up to 1.0 it was one, 4 MB (0x40400000), and a program could
+	# be at most about 4 MB.
+	const u32 USER_TOP: 0x41000000;
+	const u32 USER_PAGES: 4096;             # (USER_TOP - USER_BASE) / PAGE_SIZE
 	const u32 PAGE_SIZE: 4096;
 	const u32 STACK_PAGES: 16;              # 64 KB (tasks.asm's USER_STACK_BOTTOM)
 	const u32 GAP_PAGES: 2;                 # nothing here, so a stack running out is stopped
@@ -178,25 +182,25 @@ phi.Process:Kernel
 		call size is Fat.FileSize: path;
 		u32 pages: (size + PAGE_SIZE - 1) / PAGE_SIZE;
 
-		if size > 0 and pages + STACK_PAGES + GAP_PAGES + SPARE_PAGES <= 1024
+		if size > 0 and pages + STACK_PAGES + GAP_PAGES + SPARE_PAGES <= USER_PAGES
 			ptr<u8> image: new u8[size];
 			int got: 0;
 			call got is Fat.ReadFile: path image size;
 
 			ptr<u32> directory: 0;
-			ptr<u32> table: 0;
 			u32 kernelStack: 0;
 			call directory is Frames.Alloc;
-			call table is Frames.Alloc;
 			call kernelStack is Frames.AllocContiguous: 2;
 
-			if got is size and directory is not 0 and table is not 0 and kernelStack is not 0
-				# the kernel's mappings (out of reach in user mode), then the program's 4 MB
+			if got is size and directory is not 0 and kernelStack is not 0
+				# the kernel's mappings (out of reach in user mode); the program's page tables are
+				# made as its pages need them (UserPage)
 				while u32 i: 0; i < 1024; i++;
 					directory:i is Paging.page_directory:i;
-					table:i is 0;
 				;;
-				directory:(USER_BASE >> 22) is table | PAGE_USER;
+				while u32 d: USER_BASE >> 22; d < USER_TOP >> 22; d++;
+					directory:d is 0;
+				;;
 
 				# its code and data
 				while u32 p: 0; p < pages; p++;
@@ -210,14 +214,14 @@ phi.Process:Kernel
 					while u32 b: 0; b < chunk; b++;
 						frame:b is image:(offset + b);
 					;;
-					table:p is frame | PAGE_USER;
+					call UserPage: directory USER_BASE + offset frame;
 				;;
 
-				# its stack, at the top of the 4 MB; the command line goes at the bottom of it
+				# its stack, at the top of its 16 MB; the command line goes at the bottom of it
 				while u32 s: 0; s < STACK_PAGES; s++;
 					ptr<u8> stackFrame: 0;
 					call stackFrame is NewPage;
-					table:(1024 - STACK_PAGES + s) is stackFrame | PAGE_USER;
+					call UserPage: directory USER_TOP - (STACK_PAGES - s) * PAGE_SIZE stackFrame;
 					if s is 0 and arguments is not 0
 						u32 a: 0;
 						while a < ARGUMENTS_SIZE - 1 and arguments:a is not 0
@@ -231,7 +235,7 @@ phi.Process:Kernel
 				while u32 s: 0; s < SPARE_PAGES; s++;
 					ptr<u8> spareFrame: 0;
 					call spareFrame is NewPage;
-					table:(1024 - STACK_PAGES - GAP_PAGES - SPARE_PAGES + s) is spareFrame | PAGE_USER;
+					call UserPage: directory USER_TOP - (STACK_PAGES + GAP_PAGES + SPARE_PAGES - s) * PAGE_SIZE spareFrame;
 				;;
 
 				u32 imageEnd: USER_BASE + pages * PAGE_SIZE;
@@ -368,7 +372,7 @@ phi.Process:Kernel
 			;;
 		;;
 		ptr<u32> directory: process_directory:pid;
-		# its 4 MB of code, data and stack, then each 4 MB its heap grew into
+		# its 16 MB of code, data and stack (the tables it has), then each 4 MB its heap grew into
 		while u32 d: USER_BASE >> 22; d <= (process_heap_end:pid - 1) >> 22; d++;
 			if (directory:d & 1) is not 0
 				call ReleaseTable: directory:d & 0xFFFFF000;
@@ -447,6 +451,18 @@ phi.Process:Kernel
 	[OwnThread: u32 t: 0;]
 		if t >= MAX_PROCESSES or thread_kernel_stack:t is 0 return false;
 	[end: (OS.TaskProcess: t) is (OS.CurrentProcess)]
+
+	# map frame at address in a program's directory, with the page table for its 4 MB made if
+	# it has none yet
+	[UserPage: ptr<u32> directory: 0; u32 address: 0; ptr<u8> frame: 0;]
+		u32 d: address >> 22;
+		if (directory:d & 1) is 0
+			ptr<u32> fresh: (NewPage);
+			directory:d is fresh | PAGE_USER;
+		;;
+		ptr<u32> table: directory:d & 0xFFFFF000;
+		table:((address >> 12) & 1023) is frame | PAGE_USER;
+	[end]
 
 	# give back a page table and every page it maps
 	[ReleaseTable: ptr<u32> table: 0;]
