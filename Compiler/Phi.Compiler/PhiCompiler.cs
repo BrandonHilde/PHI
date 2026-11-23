@@ -53,6 +53,12 @@ namespace Phi.Compiler
 
         /// <summary>The Error struct and ErrorKind enum, for a program that catches errors.</summary>
         const string ErrorLibrary = "lang.error";
+        const string FloatLibrary = "lang.float";
+        const string FloatLibraryClass = "Float";
+
+        /// <summary>A Float. name that lang.float answers (Float.Log), not a built-in (Float.Sqrt).</summary>
+        static bool IsFloatLibraryName(string? name) =>
+            name != null && name.StartsWith(FloatLibraryClass + ".") && Builtins.Find(name) == null;
 
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
         /// <param name="host">Where the program runs: PHI OS, or (for a program) another system.</param>
@@ -515,6 +521,14 @@ namespace Phi.Compiler
             // having to ask; its classes go first, so it is ready before the program's own code runs
             bool kernel = buildingFor != null ? buildingFor.Kernel : program.Classes.Any(c => c.Base == Binder.Kernel32Base);
             bool user = buildingFor != null ? !buildingFor.Kernel : program.Classes.Any(c => c.Base == Binder.ProgramBase);
+
+            // one that calls a Float method that isn't a built-in (Float.Log, Pow, Atan2 ...) gets
+            // lang.float, fdlibm's in PHI, the same to the bit on every system. (A 16-bit kernel
+            // has no f64s: there, it's an unknown method.)
+            if ((kernel || user) && !program.Classes.Any(c => c.Name == FloatLibraryClass)
+                && SyntaxWalker.Nodes(program).Any(n => n switch { CallStmt c => IsFloatLibraryName(c.Callee), CallExpr c => IsFloatLibraryName(c.Callee), NameExpr v => IsFloatLibraryName(v.Name), _ => false })
+                && Resolve(FloatLibrary, main, main, null, open) is SourceFile floats && seen.Add(Key(floats)))
+                Load(floats, program);
             // (a str without a size grows on the heap too)
             bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null }
                                                                  || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr))

@@ -5540,7 +5540,7 @@ namespace Phi.Compiler.Semantics
                 default:
                     Error(calleeSpan, OnlyElsewhere(calleeName) ?? (calleeName.StartsWith("sys.")
                         ? $"there's no system call {calleeName} for {host.Name()}: declare it as {calleeName}: number  type name ...; in this system's module"
-                        : TakesTypes(calleeName, scope) ?? $"unknown method '{calleeName}'"));
+                        : TakesTypes(calleeName, scope) ?? FloatLibraryElsewhere(calleeName, scope) ?? $"unknown method '{calleeName}'"));
                     return null;
             }
         }
@@ -5887,6 +5887,15 @@ namespace Phi.Compiler.Semantics
         {
             if (!unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
         }
+
+        /// <summary>
+        /// Float.Log and the rest of lang.float (what a program gets when it calls one) work in
+        /// f64s, which 16-bit code doesn't have: said so, where it's otherwise an unknown method.
+        /// </summary>
+        string? FloatLibraryElsewhere(string name, Scope scope) =>
+            name.StartsWith("Float.") && scope.Unit is UnitKind.Boot or UnitKind.Os
+                ? $"{name} is in lang.float, which works in f64s: it needs 32-bit code (a Kernel or a Program)"
+                : null;
 
         object? ResolveCallee(string name, Scope scope)
         {

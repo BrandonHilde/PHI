@@ -18,6 +18,11 @@ The Windows libraries of SQLite, Lua, zlib, stb and miniaudio are built with Min
 have parts of its runtime in them: Copyright (c) 2009 - 2013 by the mingw-w64 project, under
 the Zope Public License 2.1 and others (vendor/LICENSE-mingw-w64-runtime).
 
+PHI's lib/phi/lang/float.phi (Float.Log, Pow, Atan2 ...) is written from fdlibm 5.3, with
+corrections from FreeBSD's msun: Copyright (C) 1993 by Sun Microsystems, Inc. "Permission to
+use, copy, modify, and distribute this software is freely granted, provided that this notice
+is preserved." (The notice is in the file.)
+
 A release's phi is one file with the .NET runtime inside it: Copyright (c) .NET Foundation
 and Contributors, under the MIT licence, with the notices of what it's built from
 (licenses/dotnet-LICENSE.txt and licenses/dotnet-ThirdPartyNotices.txt in a release).

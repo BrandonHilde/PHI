@@ -1,0 +1,2 @@
+5:10: error: Float.Log is in lang.float, which works in f64s: it needs 32-bit code (a Kernel or a Program)
+6:10: error: Float.Atan2 is in lang.float, which works in f64s: it needs 32-bit code (a Kernel or a Program)

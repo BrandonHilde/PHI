@@ -1,0 +1,124 @@
+# runs only in 32 and 64 bits: f64 is a 32-bit kernel's and a program's
+# Float.Log, Exp, Pow, Tan, Atan2 and the rest of C's maths (lang.float, fdlibm's algorithms in
+# PHI, there without a `use`): C's answers for the special values, and every bit of 400 answers
+# each over each one's range, summed. The sums are the same on an x86 kernel and an ARM Mac:
+# the answers are, to the last bit (fdlibm's own C gives them too: checked 2026-11-22).
+phi.FloatMaths:Library
+{
+	u32 seed: 2463534242;
+	u32 sum: 0;
+
+	log 'log: ' (Float.Log: 1.0) ' ' (Float.Log: 0.0) ' ' (Float.Log: -1.0) ' ' (Float.Log: 2.718281828459045) '\n';
+	log 'log2 log10: ' (Float.Log2: 1024.0) ' ' (Float.Log10: 1000.0) ' ' (Float.Log10: 0.001) '\n';
+	log 'log1p: ' (Float.Log1p: -1.0) ' ' (Float.Log1p: 1e-20) ' ' (Float.Log1p: -2.0) '\n';
+	log 'exp: ' (Float.Exp: 0.0) ' ' (Float.Exp: 1.0) ' ' (Float.Exp: 710.0) ' ' (Float.Exp: -746.0) ' ' (Float.Expm1: 1e-10) '\n';
+	log 'pow: ' (Float.Pow: 2.0 10.0) ' ' (Float.Pow: -8.0 (1.0 / 3.0)) ' ' (Float.Pow: -2.0 3.0) ' ' (Float.Pow: 0.0 -1.0) ' ' (Float.Pow: 1.0 (0.0 / 0.0)) '\n';
+	log 'trig: ' (Float.Tan: 0.0) ' ' (Float.Tan: 1e22) ' ' (Float.Atan: 1.0) ' ' (Float.Asin: 1.0) ' ' (Float.Acos: -1.0) ' ' (Float.Asin: 2.0) '\n';
+	log 'atan2: ' (Float.Atan2: 0.0 -1.0) ' ' (Float.Atan2: -0.0 -1.0) ' ' (Float.Atan2: 1.0 0.0) ' ' (Float.Atan2: -1.0 -1.0) '\n';
+	log 'hyperbolic: ' (Float.Sinh: 1.0) ' ' (Float.Cosh: 0.0) ' ' (Float.Tanh: 30.0) ' ' (Float.Tanh: -30.0) '\n';
+	log 'roots: ' (Float.Cbrt: 27.0) ' ' (Float.Cbrt: -8.0) ' ' (Float.Hypot: 3.0 4.0) ' ' (Float.Hypot: 1e300 1e300) '\n';
+	log 'scale: ' (Float.Scale: 1.0 10) ' ' (Float.Scale: 3.0 -1) ' ' (Float.Scale: 1.0 -1074) '\n';
+
+	call Sums: 'log' -1074 1023 false;
+	call Sums: 'log2' -1074 1023 false;
+	call Sums: 'log10' -1074 1023 false;
+	call Sums: 'log1p' -60 1023 false;
+	call Sums: 'exp' -40 10 true;
+	call Sums: 'expm1' -60 10 true;
+	call Sums: 'tan' -30 1023 true;
+	call Sums: 'atan' -40 80 true;
+	call Sums: 'asin' -40 (-1) true;
+	call Sums: 'acos' -40 (-1) true;
+	call Sums: 'sinh' -40 10 true;
+	call Sums: 'cosh' -40 10 true;
+	call Sums: 'tanh' -60 6 true;
+	call Sums: 'cbrt' -1074 1023 true;
+	call Sums: 'pow' -20 20 false;
+	call Sums: 'atan2' -60 60 true;
+	call Sums: 'hypot' -1060 1020 true;
+
+	[Next]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+	[end: seed]
+
+	# an f64 whose power of two is from low to high, its fraction at random
+	[Pick: int low: 0; int high: 0; bln negative: false;]
+		int e: low + ((Next) % ((high - low + 1) as u32)) as int;
+		u32 top: (Next) & 0xfffff;
+		u32 bottom: (Next);
+		f64 x: 0.0;
+		if e < -1022
+			x is (Float.Scale: (Float.FromWords: (0x3ff00000 | top) as int bottom) e);
+		;;
+		else
+			x is (Float.FromWords: ((e + 1023) << 20) | top as int bottom);
+		;;
+		if negative and ((Next) & 1) is 1
+			x is -x;
+		;;
+	[end: x]
+
+	# 400 answers' bits, added up (each rotated, so a changed bit anywhere shows)
+	[Sums: str name: ''; int low: 0; int high: 0; bln negative: false;]
+		sum is 0;
+		while int i: 0; i < 400; i++;
+			f64 x: (Pick: low high negative);
+			f64 r: 0.0;
+			if name is 'log'
+				r is (Float.Log: x);
+			;;
+			elif name is 'log2'
+				r is (Float.Log2: x);
+			;;
+			elif name is 'log10'
+				r is (Float.Log10: x);
+			;;
+			elif name is 'log1p'
+				r is (Float.Log1p: x);
+			;;
+			elif name is 'exp'
+				r is (Float.Exp: x);
+			;;
+			elif name is 'expm1'
+				r is (Float.Expm1: x);
+			;;
+			elif name is 'tan'
+				r is (Float.Tan: x);
+			;;
+			elif name is 'atan'
+				r is (Float.Atan: x);
+			;;
+			elif name is 'asin'
+				r is (Float.Asin: x);
+			;;
+			elif name is 'acos'
+				r is (Float.Acos: x);
+			;;
+			elif name is 'sinh'
+				r is (Float.Sinh: x);
+			;;
+			elif name is 'cosh'
+				r is (Float.Cosh: x);
+			;;
+			elif name is 'tanh'
+				r is (Float.Tanh: x);
+			;;
+			elif name is 'cbrt'
+				r is (Float.Cbrt: x);
+			;;
+			elif name is 'pow'
+				r is (Float.Pow: x (Pick: -8 8 true));
+			;;
+			elif name is 'atan2'
+				r is (Float.Atan2: x (Pick: low high true));
+			;;
+			elif name is 'hypot'
+				r is (Float.Hypot: x (Pick: low high true));
+			;;
+			sum is ((sum << 7) | (sum >> 25)) + ((Float.HighWord: r) as u32) * 31 + (Float.LowWord: r);
+		;;
+		log name ' ' sum '\n';
+	[end]
+}

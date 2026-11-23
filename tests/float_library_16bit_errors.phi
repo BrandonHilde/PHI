@@ -1,0 +1,7 @@
+# Float.Log and the rest of lang.float work in f64s, which 16-bit code doesn't have: the error
+# says so, where it would otherwise be an unknown method. (Float.Sqrt and the built-ins too.)
+phi.FloatLibrary16:Bootloader
+{
+	int x: (Float.Log: 2) as int;
+	int y: (Float.Atan2: 1 2) as int;
+}

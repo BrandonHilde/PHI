@@ -1,0 +1,1427 @@
+# C's <math.h> functions PHI's built-ins don't have, written in PHI from fdlibm (Sun's
+# freely distributable maths library, which browsers' JavaScript and many C libraries use),
+# so each gives the same f64, to the last bit, on every system: PHI OS, Linux, Windows and
+# macOS, x86 or ARM. 32-bit kernels and programs, and 64-bit programs.
+#
+#   f64 y: (Float.Log: x);
+#   f64 angle: (Float.Atan2: dy dx);
+#
+# There's no need to `use` it: a program that calls Float.Log (or any of these) gets it.
+# Float.Sqrt, Abs, Floor, Ceil, Round and Trunc stay the processor's own (they're exact
+# everywhere); Float.Sin and Cos are the built-ins' (see docs/language.md).
+#
+#   Log Log2 Log10 Log1p (log of 1 + x)   Exp Expm1 (e^x - 1)   Pow: x y
+#   Tan Atan Atan2: y x  Asin Acos        Sinh Cosh Tanh        Cbrt   Hypot: x y
+#   Scale: x n (x times 2^n, C's scalbn)
+#   HighWord LowWord FromWords: high low  WithHigh: x high  WithLow: x low (an f64's halves)
+#
+# Each is fdlibm 5.3's algorithm (netlib.org/fdlibm), its numbers and its steps, so its
+# answer is within an ulp of the true one (most are the nearest f64), and special values (0,
+# -0, inf, nan) come out as C99 says. Where FreeBSD's msun (fdlibm's descendant) later
+# corrected it, this has the correction: Log1p's threshold near sqrt(2)/2, Exp and Expm1
+# at the edge of overflowing, and Pow's C99 answers (Pow: 1 nan and Pow: -1 inf are 1, where
+# fdlibm 5.3 and JavaScript say nan). Log2 and Log10 are FreeBSD's (fdlibm 5.3 has no Log2).
+# Checked 2026-11-22 line by line against fdlibm 5.3's C, and over 51000 inputs against the
+# Mac's libm (all within 1 ulp but Tan, 2 at 4e41) and V8's Math (Log, Log1p, Exp, Atan
+# and Atan2 the same in every bit). Ported 2026-11-22; fdlibm's notice follows:
+#
+# ====================================================
+# Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+#
+# Developed at SunPro, a Sun Microsystems, Inc. business.
+# Permission to use, copy, modify, and distribute this
+# software is freely granted, provided that this notice
+# is preserved.
+# ====================================================
+
+# (Made by tools/float/gen.py from tools/float/float.phi.in, which has each constant as its
+# bits (16 hex digits in braces), to check against fdlibm's comments: change that, and run the
+# script.)
+
+phi.Float:Library
+{
+	const f64 HUGE: 1.0e300;
+	const f64 TINY: 1.0e-300;
+	const f64 TWO54: 1.8014398509481984e16;
+	const f64 TWOM54: 5.551115123125783e-17;
+	const f64 TWO24: 16777216.0;
+	const f64 TWON24: 5.960464477539063e-08;
+	const f64 LN2_HI: 0.6931471803691238;
+	const f64 LN2_LO: 1.9082149292705877e-10;
+	const f64 INVLN2: 1.4426950408889634;
+
+	# log's: (log(1+f) - f + f*f/2) / s, s = f/(2+f), in powers of s*s
+	const f64 LG1: 0.6666666666666735;
+	const f64 LG2: 0.3999999999940942;
+	const f64 LG3: 0.2857142874366239;
+	const f64 LG4: 0.22222198432149784;
+	const f64 LG5: 0.1818357216161805;
+	const f64 LG6: 0.15313837699209373;
+	const f64 LG7: 0.14798198605116586;
+
+	# exp's: x*(e^x+1)/(e^x-1) - 2, in powers of x*x
+	const f64 P1: 0.16666666666666602;
+	const f64 P2: -0.0027777777777015593;
+	const f64 P3: 6.613756321437934e-05;
+	const f64 P4: -1.6533902205465252e-06;
+	const f64 P5: 4.1381367970572385e-08;
+
+	# ---- an f64's two halves (little-endian on every system PHI builds for)
+
+	# the high 32 bits of x: its sign, exponent and the top 20 bits of its fraction
+	[HighWord: f64 x: 0.0;]
+		ptr<int> w: (addr x) as ptr<int>;
+	[end: w:1]
+
+	# the low 32 bits of x's fraction
+	[LowWord: f64 x: 0.0;]
+		ptr<u32> w: (addr x) as ptr<u32>;
+	[end: w:0]
+
+	# the f64 with these halves
+	[FromWords: int high: 0; u32 low: 0;]
+		f64 x: 0.0;
+		ptr<u32> w: (addr x) as ptr<u32>;
+		w:0 is low;
+		w:1 is high as u32;
+	[end: x]
+
+	# x with its high half changed
+	[WithHigh: f64 x: 0.0; int high: 0;]
+		ptr<u32> w: (addr x) as ptr<u32>;
+		w:1 is high as u32;
+	[end: x]
+
+	# x with its low half changed
+	[WithLow: f64 x: 0.0; u32 low: 0;]
+		ptr<u32> w: (addr x) as ptr<u32>;
+		w:0 is low;
+	[end: x]
+
+	# ---- powers of two
+
+	# x times 2 to the n, rounded once (C's scalbn and ldexp)
+	[Scale: f64 x: 0.0; int n: 0;]
+		int hx: (HighWord: x);
+		u32 lx: (LowWord: x);
+		int k: (hx & 0x7ff00000) >> 20;
+		if k is 0
+			if (lx | ((hx & 0x7fffffff) as u32)) is 0 return x;     # +-0
+			x is x * TWO54;
+			hx is (HighWord: x);
+			k is ((hx & 0x7ff00000) >> 20) - 54;
+			if n < -50000 return TINY * x;                         # underflow
+		;;
+		if k is 0x7ff return x + x;                                # nan or inf
+		k is k + n;
+		if k > 0x7fe return HUGE * (Signed: HUGE hx);               # overflow
+		if k > 0 return (WithHigh: x (hx & (0x800fffff as int)) | (k << 20));
+		if k <= -54
+			if n > 50000 return HUGE * (Signed: HUGE hx);           # (n + k overflowed)
+			return TINY * (Signed: TINY hx);                        # underflow
+		;;
+		k is k + 54;                                               # a subnormal answer
+		x is (WithHigh: x (hx & (0x800fffff as int)) | (k << 20));
+	[end: x * TWOM54]
+
+	# a, with the sign of the f64 whose high half is high
+	[Signed: f64 a: 0.0; int high: 0;]
+		if high < 0 return -a;
+	[end: a]
+
+	# ---- logarithms
+
+	# log(1 + f) - f + f*f/2, for f in [sqrt(2)/2 - 1, sqrt(2) - 1] (FreeBSD's k_log1p)
+	[LogPart: f64 f: 0.0;]
+		f64 s: f / (2.0 + f);
+		f64 z: s * s;
+		f64 w: z * z;
+		f64 t1: w * (LG2 + w * (LG4 + w * LG6));
+		f64 t2: z * (LG1 + w * (LG3 + w * (LG5 + w * LG7)));
+		f64 hfsq: 0.5 * f * f;
+	[end: s * (hfsq + t2 + t1)]
+
+	# the natural logarithm
+	[Log: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		u32 lx: (LowWord: x);
+		int k: 0;
+		if hx < 0x00100000                                         # x < 2^-1022
+			if (((hx & 0x7fffffff) as u32) | lx) is 0 return -TWO54 / 0.0;   # log(+-0) = -inf
+			if hx < 0 return (x - x) / 0.0;                      # log(-#) = nan
+			k is k - 54;
+			x is x * TWO54;                                        # a subnormal x, scaled up
+			hx is (HighWord: x);
+		;;
+		if hx >= 0x7ff00000 return x + x;
+		k is k + (hx >> 20) - 1023;
+		hx is hx & 0x000fffff;
+		int i: (hx + 0x95f64) & 0x100000;
+		x is (WithHigh: x hx | (i ^ 0x3ff00000));                 # x or x/2, made 1 to 2
+		k is k + (i >> 20);
+		f64 f: x - 1.0;
+		f64 dk: k;
+		if (0x000fffff & (2 + hx)) < 3                            # -2^-20 <= f < 2^-20
+			if f is 0.0
+				if k is 0 return 0.0;
+				return dk * LN2_HI + dk * LN2_LO;
+			;;
+			f64 r: f * f * (0.5 - 0.33333333333333333 * f);
+			if k is 0 return f - r;
+			return dk * LN2_HI - ((r - dk * LN2_LO) - f);
+		;;
+		f64 s: f / (2.0 + f);
+		f64 z: s * s;
+		i is hx - 0x6147a;
+		f64 w: z * z;
+		int j: 0x6b851 - hx;
+		f64 t1: w * (LG2 + w * (LG4 + w * LG6));
+		f64 t2: z * (LG1 + w * (LG3 + w * (LG5 + w * LG7)));
+		i is i | j;
+		f64 r: t2 + t1;
+		if i > 0
+			f64 hfsq: 0.5 * f * f;
+			if k is 0 return f - (hfsq - s * (hfsq + r));
+			return dk * LN2_HI - ((hfsq - (s * (hfsq + r) + dk * LN2_LO)) - f);
+		;;
+		if k is 0 return f - s * (f - r);
+	[end: dk * LN2_HI - ((s * (f - r) - dk * LN2_LO) - f)]
+
+	# x made 1 to 2 (or a half to 1), for Log2 and Log10: its fraction's part, and k its power of two
+	[LogSplit: ptr<f64> x: 0; ptr<int> k: 0;]
+		int hx: (HighWord: x:0);
+		u32 lx: (LowWord: x:0);
+		k:0 is 0;
+		if hx < 0x00100000
+			if (((hx & 0x7fffffff) as u32) | lx) is 0
+				x:0 is -TWO54 / 0.0;
+				return 1;
+			;;
+			if hx < 0
+				x:0 is (x:0 - x:0) / 0.0;
+				return 1;
+			;;
+			k:0 is -54;
+			x:0 is x:0 * TWO54;
+			hx is (HighWord: x:0);
+		;;
+		if hx >= 0x7ff00000
+			x:0 is x:0 + x:0;
+			return 1;
+		;;
+		if hx is 0x3ff00000 and lx is 0
+			x:0 is 0.0;                                            # log(1) = +0
+			return 1;
+		;;
+		k:0 is k:0 + (hx >> 20) - 1023;
+		hx is hx & 0x000fffff;
+		int i: (hx + 0x95f64) & 0x100000;
+		x:0 is (WithHigh: x:0 hx | (i ^ 0x3ff00000));
+		k:0 is k:0 + (i >> 20);
+	[end: 0]
+
+	# the logarithm base 2 (FreeBSD's e_log2.c, from fdlibm)
+	[Log2: f64 x: 0.0;]
+		int k: 0;
+		if (LogSplit: addr x addr k) is not 0 return x;           # (an answer already)
+		f64 y: k;
+		f64 f: x - 1.0;
+		f64 hfsq: 0.5 * f * f;
+		f64 r: (LogPart: f);
+		f64 hi: (WithLow: f - hfsq 0);
+		f64 lo: (f - hi) - hfsq + r;
+		f64 val_hi: hi * 1.4426950407214463;
+		f64 val_lo: (lo + hi) * 1.6751713164886512e-10 + lo * 1.4426950407214463;
+		f64 w: y + val_hi;
+		val_lo is val_lo + (y - w) + val_hi;
+	[end: val_lo + w]
+
+	# the logarithm base 10 (FreeBSD's e_log10.c, from fdlibm)
+	[Log10: f64 x: 0.0;]
+		int k: 0;
+		if (LogSplit: addr x addr k) is not 0 return x;
+		f64 y: k;
+		f64 f: x - 1.0;
+		f64 hfsq: 0.5 * f * f;
+		f64 r: (LogPart: f);
+		f64 hi: (WithLow: f - hfsq 0);
+		f64 lo: (f - hi) - hfsq + r;
+		f64 val_hi: hi * 0.4342944818781689;
+		f64 y2: y * 0.30102999566361177;
+		f64 val_lo: y * 3.694239077158931e-13 + (lo + hi) * 2.5082946711645275e-11 + lo * 0.4342944818781689;
+		f64 w: y2 + val_hi;
+		val_lo is val_lo + (y2 - w) + val_hi;
+	[end: val_lo + w]
+
+	# log(1 + x), exact for x near 0 where Log: 1 + x would lose it
+	[Log1p: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int ax: hx & 0x7fffffff;
+		int k: 1;
+		f64 f: 0.0;
+		f64 c: 0.0;
+		int hu: 0;
+		if hx < 0x3FDA827A                                         # 1 + x < sqrt(2)+
+			if ax >= 0x3ff00000                                    # x <= -1
+				if x is -1.0 return -TWO54 / 0.0;                  # log1p(-1) = -inf
+				return (x - x) / (x - x);                          # log1p(x < -1) = nan
+			;;
+			if ax < 0x3e200000                                     # |x| < 2^-29
+				if ax < 0x3c900000 return x;                       # |x| < 2^-54
+				return x - x * x * 0.5;
+			;;
+			if hx > 0 or hx <= (0xbfd2bec4 as int)                # sqrt(2)/2- <= 1 + x < sqrt(2)+
+				k is 0;
+				f is x;
+				hu is 1;
+			;;
+		;;
+		if hx >= 0x7ff00000 return x + x;
+		if k is not 0
+			f64 u: 0.0;
+			if hx < 0x43400000
+				u is 1.0 + x;
+				hu is (HighWord: u);
+				k is (hu >> 20) - 1023;
+				if k > 0
+					c is 1.0 - (u - x);
+				;;
+				else
+					c is x - (u - 1.0);
+				;;
+				c is c / u;
+			;;
+			else
+				u is x;
+				hu is (HighWord: u);
+				k is (hu >> 20) - 1023;
+				c is 0.0;
+			;;
+			hu is hu & 0x000fffff;
+			if hu < 0x6a09e                                        # u ~< sqrt(2)
+				u is (WithHigh: u hu | 0x3ff00000);
+			;;
+			else
+				k is k + 1;
+				u is (WithHigh: u hu | 0x3fe00000);                # u/2
+				hu is (0x00100000 - hu) >> 2;
+			;;
+			f is u - 1.0;
+		;;
+		f64 hfsq: 0.5 * f * f;
+		f64 dk: k;
+		if hu is 0                                                 # |f| < 2^-20
+			if f is 0.0
+				if k is 0 return 0.0;
+				c is c + dk * LN2_LO;
+				return dk * LN2_HI + c;
+			;;
+			f64 r: hfsq * (1.0 - 0.66666666666666666 * f);
+			if k is 0 return f - r;
+			return dk * LN2_HI - ((r - (dk * LN2_LO + c)) - f);
+		;;
+		f64 s: f / (2.0 + f);
+		f64 z: s * s;
+		f64 r: z * (LG1 + z * (LG2 + z * (LG3 + z * (LG4 + z * (LG5 + z * (LG6 + z * LG7))))));
+		if k is 0 return f - (hfsq - s * (hfsq + r));
+	[end: dk * LN2_HI - ((hfsq - (s * (hfsq + r) + (dk * LN2_LO + c))) - f)]
+
+	# ---- exponentials
+
+	# e to the x
+	[Exp: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int xsb: (hx >> 31) & 1;                                   # x's sign
+		hx is hx & 0x7fffffff;                                     # |x|'s high half
+		f64 hi: 0.0;
+		f64 lo: 0.0;
+		int k: 0;
+		if hx >= 0x40862E42                                        # |x| >= 709.78...
+			if hx >= 0x7ff00000
+				if ((hx & 0xfffff) as u32 | (LowWord: x)) is not 0 return x + x;   # nan
+				if xsb is 0 return x;                              # exp(+inf) = inf
+				return 0.0;                                        # exp(-inf) = 0
+			;;
+			if x > 709.782712893384 return HUGE * HUGE;        # overflow
+			if x < -745.1332191019411 return 9.332636185032189e-302 * 9.332636185032189e-302;   # underflow
+		;;
+		if hx > 0x3fd62e42                                         # |x| > ln2 / 2
+			if hx < 0x3FF0A2B2                                     # and |x| < 1.5 ln2
+				if xsb is 0
+					hi is x - LN2_HI;
+					lo is LN2_LO;
+					k is 1;
+				;;
+				else
+					hi is x + LN2_HI;
+					lo is -LN2_LO;
+					k is -1;
+				;;
+			;;
+			else
+				f64 half: 0.5;
+				if xsb is not 0
+					half is -0.5;
+				;;
+				k is (INVLN2 * x + half) as int;
+				f64 t: k;
+				hi is x - t * LN2_HI;                              # (exact)
+				lo is t * LN2_LO;
+			;;
+			x is hi - lo;
+		;;
+		elif hx < 0x3e300000                                       # |x| < 2^-28
+			return 1.0 + x;
+		;;
+		f64 t: x * x;
+		f64 twopk: 0.0;
+		if k >= -1021
+			twopk is (FromWords: 0x3ff00000 + (k << 20) 0);
+		;;
+		else
+			twopk is (FromWords: 0x3ff00000 + ((k + 1000) << 20) 0);
+		;;
+		f64 c: x - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+		if k is 0 return 1.0 - ((x * c) / (c - 2.0) - x);
+		f64 y: 1.0 - ((lo - (x * c) / (2.0 - c)) - hi);
+		if k >= -1021
+			if k is 1024 return y * 2.0 * 8.98846567431158e307;
+			return y * twopk;
+		;;
+	[end: y * twopk * 9.332636185032189e-302]
+
+	# e to the x, less 1, exact for x near 0 where Exp: x would lose it
+	[Expm1: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int xsb: hx & (0x80000000 as int);                         # x's sign
+		hx is hx & 0x7fffffff;
+		f64 hi: 0.0;
+		f64 lo: 0.0;
+		f64 c: 0.0;
+		int k: 0;
+		if hx >= 0x4043687A                                        # |x| >= 56 ln2
+			if hx >= 0x40862E42                                    # |x| >= 709.78...
+				if hx >= 0x7ff00000
+					if ((hx & 0xfffff) as u32 | (LowWord: x)) is not 0 return x + x;
+					if xsb is 0 return x;
+					return -1.0;
+				;;
+				if x > 709.782712893384 return HUGE * HUGE;
+			;;
+			if xsb is not 0 return TINY - 1.0;                     # x < -56 ln2: -1
+		;;
+		if hx > 0x3fd62e42                                         # |x| > ln2 / 2
+			if hx < 0x3FF0A2B2
+				if xsb is 0
+					hi is x - LN2_HI;
+					lo is LN2_LO;
+					k is 1;
+				;;
+				else
+					hi is x + LN2_HI;
+					lo is -LN2_LO;
+					k is -1;
+				;;
+			;;
+			else
+				f64 half: 0.5;
+				if xsb is not 0
+					half is -0.5;
+				;;
+				k is (INVLN2 * x + half) as int;
+				f64 t: k;
+				hi is x - t * LN2_HI;
+				lo is t * LN2_LO;
+			;;
+			x is hi - lo;
+			c is (hi - x) - lo;
+		;;
+		elif hx < 0x3c900000                                       # |x| < 2^-54
+			return x;
+		;;
+		f64 hfx: 0.5 * x;
+		f64 hxs: x * hfx;
+		f64 r1: 1.0 + hxs * (-0.03333333333333313 + hxs * (0.0015873015872548146 + hxs * (-7.93650757867488e-05 + hxs * (4.008217827329362e-06 + hxs * -2.0109921818362437e-07))));
+		f64 t: 3.0 - r1 * hfx;
+		f64 e: hxs * ((r1 - t) / (6.0 - x * t));
+		if k is 0 return x - (x * e - hxs);
+		f64 twopk: (FromWords: 0x3ff00000 + (k << 20) 0);
+		e is (x * (e - c) - c);
+		e is e - hxs;
+		if k is -1 return 0.5 * (x - e) - 0.5;
+		if k is 1
+			if x < -0.25 return -2.0 * (e - (x + 0.5));
+			return 1.0 + 2.0 * (x - e);
+		;;
+		f64 y: 0.0;
+		if k <= -2 or k > 56                                       # e^x - 1 is e^x
+			y is 1.0 - (e - x);
+			if k is 1024
+				y is y * 2.0 * 8.98846567431158e307;
+			;;
+			else
+				y is y * twopk;
+			;;
+			return y - 1.0;
+		;;
+		if k < 20
+			t is (FromWords: 0x3ff00000 - (0x200000 >> k) 0);    # 1 - 2^-k
+			y is t - (e - x);
+			y is y * twopk;
+		;;
+		else
+			t is (FromWords: (0x3ff - k) << 20 0);                 # 2^-k
+			y is x - (e + t);
+			y is y + 1.0;
+			y is y * twopk;
+		;;
+	[end: y]
+
+	# x to the power y
+	[Pow: f64 x: 0.0; f64 y: 0.0;]
+		int hx: (HighWord: x);
+		u32 lx: (LowWord: x);
+		int hy: (HighWord: y);
+		u32 ly: (LowWord: y);
+		int ix: hx & 0x7fffffff;
+		int iy: hy & 0x7fffffff;
+
+		if ((iy as u32) | ly) is 0 return 1.0;                     # x^0 = 1
+		if hx is 0x3ff00000 and lx is 0 return 1.0;                # 1^y = 1, even for nan
+		if ix > 0x7ff00000 or (ix is 0x7ff00000 and lx is not 0) or iy > 0x7ff00000 or (iy is 0x7ff00000 and ly is not 0)
+			return x + y;                                          # nan
+		;;
+
+		# y as a whole number, where x < 0: 0 not one, 1 odd, 2 even
+		int yisint: 0;
+		if hx < 0
+			if iy >= 0x43400000
+				yisint is 2;
+			;;
+			elif iy >= 0x3ff00000
+				int e: (iy >> 20) - 0x3ff;
+				if e > 20
+					u32 j: ly >> (52 - e);
+					if (j << (52 - e)) is ly
+						yisint is 2 - (j & 1) as int;
+					;;
+				;;
+				elif ly is 0
+					int j: iy >> (20 - e);
+					if (j << (20 - e)) is iy
+						yisint is 2 - (j & 1);
+					;;
+				;;
+			;;
+		;;
+
+		# y special
+		if ly is 0
+			if iy is 0x7ff00000                                    # y is +-inf
+				if (((ix - 0x3ff00000) as u32) | lx) is 0 return 1.0;   # (-1)^+-inf
+				if ix >= 0x3ff00000                                # |x| > 1
+					if hy >= 0 return y;
+					return 0.0;
+				;;
+				if hy < 0 return -y;                               # |x| < 1
+				return 0.0;
+			;;
+			if iy is 0x3ff00000                                    # y is +-1
+				if hy < 0 return 1.0 / x;
+				return x;
+			;;
+			if hy is 0x40000000 return x * x;                      # y is 2
+			if hy is 0x3fe00000 and hx >= 0 return (Float.Sqrt: x);    # y is 0.5
+		;;
+
+		f64 ax: (Float.Abs: x);
+		# x special
+		if lx is 0
+			if ix is 0x7ff00000 or ix is 0 or ix is 0x3ff00000    # x is +-0, +-inf, +-1
+				f64 z: ax;
+				if hy < 0
+					z is 1.0 / z;
+				;;
+				if hx < 0
+					if ((ix - 0x3ff00000) | yisint) is 0
+						z is (z - z) / (z - z);                    # (-1)^not whole is nan
+					;;
+					elif yisint is 1
+						z is -z;
+					;;
+				;;
+				return z;
+			;;
+		;;
+
+		int n: ((hx as u32) >> 31) as int - 1;
+		if (n | yisint) is 0 return (x - x) / (x - x);             # (x < 0)^not whole is nan
+		f64 s: 1.0;                                                # the answer's sign
+		if (n | (yisint - 1)) is 0
+			s is -1.0;                                             # (x < 0)^odd
+		;;
+
+		f64 t1: 0.0;
+		f64 t2: 0.0;
+		if iy > 0x41e00000                                         # |y| > 2^31
+			if iy > 0x43f00000                                     # |y| > 2^64: it can only overflow or underflow
+				if ix <= 0x3fefffff
+					if hy < 0 return HUGE * HUGE;
+					return TINY * TINY;
+				;;
+				if ix >= 0x3ff00000
+					if hy > 0 return HUGE * HUGE;
+					return TINY * TINY;
+				;;
+			;;
+			if ix < 0x3fefffff                                     # x not near 1
+				if hy < 0 return s * HUGE * HUGE;
+				return s * TINY * TINY;
+			;;
+			if ix > 0x3ff00000
+				if hy > 0 return s * HUGE * HUGE;
+				return s * TINY * TINY;
+			;;
+			# |1 - x| <= 2^-20: log(x) is x - x^2/2 + x^3/3 - x^4/4
+			f64 t: ax - 1.0;
+			f64 w: (t * t) * (0.5 - t * (0.3333333333333333 - t * 0.25));
+			f64 u: 1.4426950216293335 * t;
+			f64 v: t * 1.9259629911266175e-08 - w * INVLN2;
+			t1 is (WithLow: u + v 0);
+			t2 is v - (t1 - u);
+		;;
+		else
+			n is 0;
+			if ix < 0x00100000                                     # subnormal x
+				ax is ax * 9007199254740992.0;
+				n is n - 53;
+				ix is (HighWord: ax);
+			;;
+			n is n + (ix >> 20) - 0x3ff;
+			int j: ix & 0x000fffff;
+			ix is j | 0x3ff00000;
+			int k: 0;
+			if j <= 0x3988E
+				k is 0;                                            # |x| < sqrt(3/2)
+			;;
+			elif j < 0xBB67A
+				k is 1;                                            # |x| < sqrt(3)
+			;;
+			else
+				k is 0;
+				n is n + 1;
+				ix is ix - 0x00100000;
+			;;
+			ax is (WithHigh: ax ix);
+			f64 bp: 1.0;
+			f64 dp_h: 0.0;
+			f64 dp_l: 0.0;
+			if k is 1
+				bp is 1.5;
+				dp_h is 0.5849624872207642;
+				dp_l is 1.350039202129749e-08;
+			;;
+
+			# ss = s_h + s_l = (x - 1)/(x + 1) or (x - 1.5)/(x + 1.5)
+			f64 u: ax - bp;
+			f64 v: 1.0 / (ax + bp);
+			f64 ss: u * v;
+			f64 s_h: (WithLow: ss 0);
+			f64 t_h: (FromWords: ((ix >> 1) | 0x20000000) + 0x00080000 + (k << 18) 0);
+			f64 t_l: ax - (t_h - bp);
+			f64 s_l: v * ((u - s_h * t_h) - s_h * t_l);
+			# log(ax)
+			f64 s2: ss * ss;
+			f64 r: s2 * s2 * (0.5999999999999946 + s2 * (0.4285714285785502 + s2 * (0.33333332981837743 + s2 * (0.272728123808534 + s2 * (0.23066074577556175 + s2 * 0.20697501780033842)))));
+			r is r + s_l * (s_h + ss);
+			s2 is s_h * s_h;
+			t_h is (WithLow: 3.0 + s2 + r 0);
+			t_l is r - ((t_h - 3.0) - s2);
+			# u + v = ss * (1 + ...)
+			u is s_h * t_h;
+			v is s_l * t_h + t_l * ss;
+			# 2/(3 log2) * (ss + ...)
+			f64 p_h: (WithLow: u + v 0);
+			f64 p_l: v - (p_h - u);
+			f64 z_h: 0.9617967009544373 * p_h;
+			f64 z_l: -7.028461650952758e-09 * p_h + p_l * 0.9617966939259756 + dp_l;
+			# log2(ax) = (ss + ...) * 2/(3 log2) = n + dp_h + z_h + z_l
+			f64 t: n;
+			t1 is (WithLow: ((z_h + z_l) + dp_h) + t 0);
+			t2 is z_l - (((t1 - t) - dp_h) - z_h);
+		;;
+
+		# (y1 + y2) * (t1 + t2), y split in two
+		f64 y1: (WithLow: y 0);
+		f64 p_l: (y - y1) * t1 + y * t2;
+		f64 p_h: y1 * t1;
+		f64 z: p_l + p_h;
+		int j: (HighWord: z);
+		u32 i: (LowWord: z);
+		if j >= 0x40900000                                         # z >= 1024
+			if (((j - 0x40900000) as u32) | i) is not 0 return s * HUGE * HUGE;
+			if p_l + 8.008566259537294e-17 > z - p_h return s * HUGE * HUGE;
+		;;
+		elif (j & 0x7fffffff) >= 0x4090cc00                        # z <= -1075
+			if (((j - (0xc090cc00 as int)) as u32) | i) is not 0 return s * TINY * TINY;
+			if p_l <= z - p_h return s * TINY * TINY;
+		;;
+
+		# 2 to the (p_h + p_l)
+		int ii: j & 0x7fffffff;
+		int k: (ii >> 20) - 0x3ff;
+		n is 0;
+		if ii > 0x3fe00000                                         # |z| > 0.5: n = [z + 0.5]
+			n is j + (0x00100000 >> (k + 1));
+			k is ((n & 0x7fffffff) >> 20) - 0x3ff;                 # k for the new n
+			f64 t: (FromWords: n & ~(0x000fffff >> k) 0);
+			n is ((n & 0x000fffff) | 0x00100000) >> (20 - k);
+			if j < 0
+				n is -n;
+			;;
+			p_h is p_h - t;
+		;;
+		f64 t: (WithLow: p_l + p_h 0);
+		f64 u: t * 0.6931471824645996;
+		f64 v: (p_l - (t - p_h)) * 0.6931471805599453 + t * -1.904654299957768e-09;
+		z is u + v;
+		f64 w: v - (z - u);
+		t is z * z;
+		t1 is z - t * (P1 + t * (P2 + t * (P3 + t * (P4 + t * P5))));
+		f64 r: (z * t1) / (t1 - 2.0) - (w + z * w);
+		z is 1.0 - (r - z);
+		j is (HighWord: z);
+		j is j + (n << 20);
+		if (j >> 20) <= 0
+			z is (Scale: z n);                                     # a subnormal answer
+		;;
+		else
+			z is (WithHigh: z j);
+		;;
+	[end: s * z]
+
+	# ---- reducing an angle: x less a whole number n of right angles (pi/2), and n
+
+	# x - n pi/2 as y:0 + y:1, for any x; n (only its lowest bits matter)
+	[RemPio2: f64 x: 0.0; ptr<f64> y: 0;]
+		int hx: (HighWord: x);
+		int ix: hx & 0x7fffffff;
+		if ix <= 0x3fe921fb                                        # |x| ~<= pi/4: nothing to take away
+			y:0 is x;
+			y:1 is 0.0;
+			return 0;
+		;;
+		if ix < 0x4002d97c                                         # |x| < 3pi/4: n is +-1
+			if hx > 0
+				f64 z: x - 1.5707963267341256;
+				if ix is not 0x3ff921fb                            # 33 + 53 bits of pi do
+					y:0 is z - 6.077100506506192e-11;
+					y:1 is (z - y:0) - 6.077100506506192e-11;
+				;;
+				else                                               # near pi/2: 33 + 33 + 53 bits
+					z is z - 6.077100506303966e-11;
+					y:0 is z - 2.0222662487959506e-21;
+					y:1 is (z - y:0) - 2.0222662487959506e-21;
+				;;
+				return 1;
+			;;
+			f64 z: x + 1.5707963267341256;
+			if ix is not 0x3ff921fb
+				y:0 is z + 6.077100506506192e-11;
+				y:1 is (z - y:0) + 6.077100506506192e-11;
+			;;
+			else
+				z is z + 6.077100506303966e-11;
+				y:0 is z + 2.0222662487959506e-21;
+				y:1 is (z - y:0) + 2.0222662487959506e-21;
+			;;
+			return -1;
+		;;
+		if ix <= 0x413921fb                                        # |x| ~<= 2^19 pi/2: medium
+			f64 t: (Float.Abs: x);
+			int n: (t * 0.6366197723675814 + 0.5) as int;
+			f64 fn: n;
+			f64 r: t - fn * 1.5707963267341256;
+			f64 w: fn * 6.077100506506192e-11;                      # (good to 85 bits)
+			if n < 32 and ix is not pio2_high:(n - 1)
+				y:0 is r - w;                                      # (no cancellation)
+			;;
+			else
+				int j: ix >> 20;
+				y:0 is r - w;
+				int i: j - (((HighWord: y:0) >> 20) & 0x7ff);
+				if i > 16                                          # a second round, good to 118 bits
+					t is r;
+					w is fn * 6.077100506303966e-11;
+					r is t - w;
+					w is fn * 2.0222662487959506e-21 - ((t - r) - w);
+					y:0 is r - w;
+					i is j - (((HighWord: y:0) >> 20) & 0x7ff);
+					if i > 49                                      # a third, 151 bits
+						t is r;
+						w is fn * 2.0222662487111665e-21;
+						r is t - w;
+						w is fn * 8.4784276603689e-32 - ((t - r) - w);
+						y:0 is r - w;
+					;;
+				;;
+			;;
+			y:1 is (r - y:0) - w;
+			if hx < 0
+				y:0 is -y:0;
+				y:1 is -y:1;
+				return -n;
+			;;
+			return n;
+		;;
+		if ix >= 0x7ff00000                                        # inf or nan
+			y:0 is x - x;
+			y:1 is x - x;
+			return 0;
+		;;
+		# a large x: its 24-bit pieces, scaled so the first is under 2^24, then Payne and Hanek's way
+		f64 tx[3];
+		int e0: (ix >> 20) - 1046;                                 # e0 = ilogb(z) - 23
+		f64 z: (FromWords: ix - (e0 << 20) (LowWord: x));
+		while int i: 0; i < 2; i++;
+			tx:i is (z as int);
+			z is (z - tx:i) * TWO24;
+		;;
+		tx:2 is z;
+		int nx: 3;
+		while tx:(nx - 1) is 0.0
+			nx--;
+		;;
+		int n: (RemPio2Large: addr tx:0 y e0 nx);
+		if hx < 0
+			y:0 is -y:0;
+			y:1 is -y:1;
+			return -n;
+		;;
+	[end: n]
+
+	# the high halves of n pi/2, n from 1 to 32 (RemPio2's check for cancellation)
+	int pio2_high: 0x3FF921FB 0x400921FB 0x4012D97C 0x401921FB 0x401F6A7A 0x4022D97C 0x4025FDBB 0x402921FB 0x402C463A 0x402F6A7A 0x4031475C 0x4032D97C 0x40346B9C 0x4035FDBB 0x40378FDB 0x403921FB 0x403AB41B 0x403C463A 0x403DD85A 0x403F6A7A 0x40407E4C 0x4041475C 0x4042106C 0x4042D97C 0x4043A28C 0x40446B9C 0x404534AC 0x4045FDBB 0x4046C6CB 0x40478FDB 0x404858EB 0x404921FB;
+
+	# 2/pi, 24 bits at a time (1584 bits: enough for any f64)
+	int two_over_pi: 0xA2F983 0x6E4E44 0x1529FC 0x2757D1 0xF534DD 0xC0DB62 0x95993C 0x439041 0xFE5163 0xABDEBB 0xC561B7 0x246E3A 0x424DD2 0xE00649 0x2EEA09 0xD1921C 0xFE1DEB 0x1CB129 0xA73EE8 0x8235F5 0x2EBB44 0x84E99C 0x7026B4 0x5F7E41 0x3991D6 0x398353 0x39F49C 0x845F8B 0xBDF928 0x3B1FF8 0x97FFDE 0x05980F 0xEF2F11 0x8B5A0A 0x6D1F6D 0x367ECF 0x27CB09 0xB74F46 0x3F669E 0x5FEA2D 0x7527BA 0xC7EBE5 0xF17B3D 0x0739F7 0x8A5292 0xEA6BFB 0x5FB11F 0x8D5D08 0x560330 0x46FC7B 0x6BABF0 0xCFBC20 0x9AF436 0x1DA9E3 0x91615E 0xE61B08 0x659985 0x5F14A0 0x68408D 0xFFD880 0x4D7327 0x310606 0x1556CA 0x73A8C9 0x60E27B 0xC08C6B;
+
+	# pi/2, 24 bits at a time
+	f64 pio2_parts: 1.570796251296997 7.549789415861596e-08 5.390302529957765e-15 3.282003415807913e-22 1.270655753080676e-29 1.2293330898111133e-36 2.7337005381646456e-44 2.1674168387780482e-51;
+
+	# fdlibm's __kernel_rem_pio2, for 53-bit answers (its prec 2): x (nx 24-bit pieces, the
+	# first scaled by 2^-e0) less a whole number of pi/2s, into y:0 + y:1; that number's lowest 3 bits
+	[RemPio2Large: ptr<f64> x: 0; ptr<f64> y: 0; int e0: 0; int nx: 0;]
+		f64 f[20];
+		f64 fq[20];
+		f64 q[20];
+		int iq[20];
+		int jk: 4;
+		int jp: jk;
+		int jx: nx - 1;
+		int jv: (e0 - 3) / 24;
+		if jv < 0
+			jv is 0;
+		;;
+		int q0: e0 - 24 * (jv + 1);
+
+		# f:0 to f:(jx + jk), where f:(jx + jk) is two_over_pi:(jv + jk)
+		int j: jv - jx;
+		int m: jx + jk;
+		while int i: 0; i <= m; i++;
+			if j < 0
+				f:i is 0.0;
+			;;
+			else
+				f:i is two_over_pi:j;
+			;;
+			j++;
+		;;
+		# q:0 to q:jk
+		while int i: 0; i <= jk; i++;
+			f64 fw: 0.0;
+			while int k: 0; k <= jx; k++;
+				fw is fw + x:k * f:(jx + i - k);
+			;;
+			q:i is fw;
+		;;
+
+		int jz: jk;
+		int n: 0;
+		int ih: 0;
+		f64 z: 0.0;
+		bln again: true;
+		while again
+			again is false;
+			# q, in 24-bit whole numbers, the other way round
+			z is q:jz;
+			int i: 0;
+			j is jz;
+			while j > 0
+				f64 fw: ((TWON24 * z) as int);
+				iq:i is (z - TWO24 * fw) as int;
+				z is q:(j - 1) + fw;
+				i++;
+				j--;
+			;;
+			# n
+			z is (Scale: z q0);
+			z is z - 8.0 * (Float.Floor: z * 0.125);               # (only n's lowest bits matter)
+			n is z as int;
+			z is z - n;
+			ih is 0;
+			if q0 > 0                                              # iq:(jz - 1) has more of n
+				i is iq:(jz - 1) >> (24 - q0);
+				n is n + i;
+				iq:(jz - 1) is iq:(jz - 1) - (i << (24 - q0));
+				ih is iq:(jz - 1) >> (23 - q0);
+			;;
+			elif q0 is 0
+				ih is iq:(jz - 1) >> 23;
+			;;
+			elif z >= 0.5
+				ih is 2;
+			;;
+
+			if ih > 0                                              # q > 0.5
+				n is n + 1;
+				int carry: 0;
+				while int k: 0; k < jz; k++;                       # 1 - q
+					int v: iq:k;
+					if carry is 0
+						if v is not 0
+							carry is 1;
+							iq:k is 0x1000000 - v;
+						;;
+					;;
+					else
+						iq:k is 0xffffff - v;
+					;;
+				;;
+				if q0 is 1                                         # (1 in 12)
+					iq:(jz - 1) is iq:(jz - 1) & 0x7fffff;
+				;;
+				elif q0 is 2
+					iq:(jz - 1) is iq:(jz - 1) & 0x3fffff;
+				;;
+				if ih is 2
+					z is 1.0 - z;
+					if carry is not 0
+						z is z - (Scale: 1.0 q0);
+					;;
+				;;
+			;;
+
+			# more of 2/pi needed?
+			if z is 0.0
+				int bits: 0;
+				while int k: jz - 1; k >= jk; k--;
+					bits is bits | iq:k;
+				;;
+				if bits is 0
+					int more: 1;
+					while iq:(jk - more) is 0
+						more++;
+					;;
+					while int k: jz + 1; k <= jz + more; k++;
+						f:(jx + k) is two_over_pi:(jv + k);
+						f64 fw: 0.0;
+						while int g: 0; g <= jx; g++;
+							fw is fw + x:g * f:(jx + k - g);
+						;;
+						q:k is fw;
+					;;
+					jz is jz + more;
+					again is true;
+				;;
+			;;
+		;;
+
+		# the pieces that are 0 left off
+		if z is 0.0
+			jz--;
+			q0 is q0 - 24;
+			while iq:jz is 0
+				jz--;
+				q0 is q0 - 24;
+			;;
+		;;
+		else                                                       # z in 24-bit pieces, if it needs them
+			z is (Scale: z -q0);
+			if z >= TWO24
+				f64 fw: ((TWON24 * z) as int);
+				iq:jz is (z - TWO24 * fw) as int;
+				jz++;
+				q0 is q0 + 24;
+				iq:jz is fw as int;
+			;;
+			else
+				iq:jz is z as int;
+			;;
+		;;
+
+		# the pieces as f64s
+		f64 fw: (Scale: 1.0 q0);
+		while int i: jz; i >= 0; i--;
+			q:i is fw * iq:i;
+			fw is fw * TWON24;
+		;;
+		# pio2_parts times q
+		while int i: jz; i >= 0; i--;
+			fw is 0.0;
+			int k: 0;
+			while k <= jp and k <= jz - i
+				fw is fw + pio2_parts:k * q:(i + k);
+				k++;
+			;;
+			fq:(jz - i) is fw;
+		;;
+		# fq summed into y:0 + y:1
+		fw is 0.0;
+		while int i: jz; i >= 0; i--;
+			fw is fw + fq:i;
+		;;
+		if ih is 0
+			y:0 is fw;
+		;;
+		else
+			y:0 is -fw;
+		;;
+		fw is fq:0 - fw;
+		while int i: 1; i <= jz; i++;
+			fw is fw + fq:i;
+		;;
+		if ih is 0
+			y:1 is fw;
+		;;
+		else
+			y:1 is -fw;
+		;;
+	[end: n & 7]
+
+	# ---- trigonometry
+
+	# tan(x + y) for |x| ~<= pi/4, y the tail of x; or -1/tan(x + y) if odd is -1
+	[TanPart: f64 x: 0.0; f64 y: 0.0; int odd: 1;]
+		int hx: (HighWord: x);
+		int ix: hx & 0x7fffffff;
+		if ix < 0x3e300000                                         # |x| < 2^-28
+			if (x as int) is 0
+				if ((ix as u32 | (LowWord: x)) | ((odd + 1) as u32)) is 0 return 1.0 / (Float.Abs: x);
+				if odd is 1 return x;
+				# -1/(x + y), with care
+				f64 w: x + y;
+				f64 z: (WithLow: w 0);
+				f64 v: y - (z - x);
+				f64 a: -1.0 / w;
+				f64 t: (WithLow: a 0);
+				f64 s: 1.0 + t * z;
+				return t + a * (s + t * v);
+			;;
+		;;
+		if ix >= 0x3FE59428                                        # |x| >= 0.6744
+			if hx < 0
+				x is -x;
+				y is -y;
+			;;
+			f64 z: 0.7853981633974483 - x;
+			f64 w: 3.061616997868383e-17 - y;
+			x is z + w;
+			y is 0.0;
+		;;
+		f64 z: x * x;
+		f64 w: z * z;
+		# x^5 (T1 + x^2 T2 + ...), odd and even powers apart
+		f64 r: 0.13333333333320124 + w * (0.021869488294859542 + w * (0.0035920791075913124 + w * (0.0005880412408202641 + w * (7.817944429395571e-05 + w * -1.8558637485527546e-05))));
+		f64 v: z * (0.05396825397622605 + w * (0.0088632398235993 + w * (0.0014562094543252903 + w * (0.0002464631348184699 + w * (7.140724913826082e-05 + w * 2.590730518636337e-05)))));
+		f64 s: z * x;
+		r is y + z * (s * (r + v) + y);
+		r is r + 0.3333333333333341 * s;
+		w is x + r;
+		if ix >= 0x3FE59428
+			v is odd;
+			f64 sign: 1 - ((hx >> 30) & 2);
+			return sign * (v - 2.0 * (x - (w * w / (w + v) - r)));
+		;;
+		if odd is 1 return w;
+		# -1/(x + r), with care
+		z is (WithLow: w 0);
+		v is r - (z - x);
+		f64 a: -1.0 / w;
+		f64 t: (WithLow: a 0);
+		s is 1.0 + t * z;
+	[end: t + a * (s + t * v)]
+
+	# the tangent of x radians
+	[Tan: f64 x: 0.0;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix <= 0x3fe921fb return (TanPart: x 0.0 1);             # |x| ~<= pi/4
+		if ix >= 0x7ff00000 return x - x;                          # inf or nan: nan
+		f64 y[2];
+		int n: (RemPio2: x addr y:0);
+	[end: (TanPart: y:0 y:1 1 - ((n & 1) << 1))]
+
+	# the angle whose tangent is x, in radians: -pi/2 to pi/2
+	[Atan: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int ix: hx & 0x7fffffff;
+		int id: 0;
+		if ix >= 0x44100000                                        # |x| >= 2^66
+			if ix > 0x7ff00000 or (ix is 0x7ff00000 and (LowWord: x) is not 0) return x + x;   # nan
+			if hx > 0 return atan_hi:3 + atan_lo:3;
+			return -atan_hi:3 - atan_lo:3;
+		;;
+		if ix < 0x3fdc0000                                         # |x| < 0.4375
+			if ix < 0x3e400000 return x;                           # |x| < 2^-27
+			id is -1;
+		;;
+		else
+			x is (Float.Abs: x);
+			if ix < 0x3ff30000                                     # |x| < 1.1875
+				if ix < 0x3fe60000                                 # 7/16 <= |x| < 11/16
+					id is 0;
+					x is (2.0 * x - 1.0) / (2.0 + x);
+				;;
+				else                                               # 11/16 <= |x| < 19/16
+					id is 1;
+					x is (x - 1.0) / (x + 1.0);
+				;;
+			;;
+			elif ix < 0x40038000                                   # |x| < 2.4375
+				id is 2;
+				x is (x - 1.5) / (1.0 + 1.5 * x);
+			;;
+			else                                                   # 2.4375 <= |x| < 2^66
+				id is 3;
+				x is -1.0 / x;
+			;;
+		;;
+		f64 z: x * x;
+		f64 w: z * z;
+		# the sum's odd and even terms apart
+		f64 s1: z * (atan_t:0 + w * (atan_t:2 + w * (atan_t:4 + w * (atan_t:6 + w * (atan_t:8 + w * atan_t:10)))));
+		f64 s2: w * (atan_t:1 + w * (atan_t:3 + w * (atan_t:5 + w * (atan_t:7 + w * atan_t:9))));
+		if id < 0 return x - x * (s1 + s2);
+		z is atan_hi:id - ((x * (s1 + s2) - atan_lo:id) - x);
+		if hx < 0 return -z;
+	[end: z]
+
+	f64 atan_hi: 0.4636476090008061 0.7853981633974483 0.982793723247329 1.5707963267948966;
+	f64 atan_lo: 2.2698777452961687e-17 3.061616997868383e-17 1.3903311031230998e-17 6.123233995736766e-17;
+	f64 atan_t: 0.3333333333333293 -0.19999999999876483 0.14285714272503466 -0.11111110405462356
+		0.09090887133436507 -0.0769187620504483 0.06661073137387531 -0.058335701337905735
+		0.049768779946159324 -0.036531572744216916 0.016285820115365782;
+
+	# the angle of the point (x, y) from the x axis, in radians: -pi to pi
+	[Atan2: f64 y: 0.0; f64 x: 0.0;]
+		int hx: (HighWord: x);
+		u32 lx: (LowWord: x);
+		int ix: hx & 0x7fffffff;
+		int hy: (HighWord: y);
+		u32 ly: (LowWord: y);
+		int iy: hy & 0x7fffffff;
+		if ix > 0x7ff00000 or (ix is 0x7ff00000 and lx is not 0) or iy > 0x7ff00000 or (iy is 0x7ff00000 and ly is not 0)
+			return x + y;                                          # nan
+		;;
+		if hx is 0x3ff00000 and lx is 0 return (Atan: y);          # x is 1
+		int m: ((hy >> 31) & 1) | ((hx >> 30) & 2);                # 2 * x's sign + y's
+		f64 pi: 3.141592653589793;
+		f64 pi_o_2: 1.5707963267948966;
+		f64 pi_o_4: 0.7853981633974483;
+
+		if ((iy as u32) | ly) is 0                                 # y is 0
+			if m <= 1 return y;                                    # atan(+-0, +anything) = +-0
+			if m is 2 return pi + TINY;                            # atan(+0, -anything) = pi
+			return -pi - TINY;                                     # atan(-0, -anything) = -pi
+		;;
+		if ((ix as u32) | lx) is 0                                 # x is 0
+			if hy < 0 return -pi_o_2 - TINY;
+			return pi_o_2 + TINY;
+		;;
+		if ix is 0x7ff00000                                        # x is inf
+			if iy is 0x7ff00000
+				if m is 0 return pi_o_4 + TINY;
+				if m is 1 return -pi_o_4 - TINY;
+				if m is 2 return 3.0 * pi_o_4 + TINY;
+				return -3.0 * pi_o_4 - TINY;
+			;;
+			if m is 0 return 0.0;
+			if m is 1 return -0.0;
+			if m is 2 return pi + TINY;
+			return -pi - TINY;
+		;;
+		if iy is 0x7ff00000                                        # y is inf
+			if hy < 0 return -pi_o_2 - TINY;
+			return pi_o_2 + TINY;
+		;;
+
+		f64 pi_lo: 1.2246467991473532e-16;
+		f64 z: 0.0;
+		int k: (iy - ix) >> 20;
+		if k > 60                                                  # |y/x| > 2^60
+			z is pi_o_2 + 0.5 * pi_lo;
+			m is m & 1;
+		;;
+		elif hx < 0 and k < -60                                    # 0 > |y|/x > -2^-60
+			z is 0.0;
+		;;
+		else
+			z is (Atan: (Float.Abs: y / x));
+		;;
+		if m is 0 return z;
+		if m is 1 return -z;
+		if m is 2 return pi - (z - pi_lo);
+	[end: (z - pi_lo) - pi]
+
+	# asin's and acos's: (asin(x) - x) / x^3 as R(x^2), over Q
+	[AsinR: f64 t: 0.0;]
+		f64 p: t * (0.16666666666666666 + t * (-0.3255658186224009 + t * (0.20121253213486293 + t * (-0.04005553450067941 + t * (0.0007915349942898145 + t * 3.479331075960212e-05)))));
+		f64 q: 1.0 + t * (-2.403394911734414 + t * (2.0209457602335057 + t * (-0.6882839716054533 + t * 0.07703815055590194)));
+	[end: p / q]
+
+	# the angle whose sine is x, in radians: -pi/2 to pi/2 (nan outside -1 to 1)
+	[Asin: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int ix: hx & 0x7fffffff;
+		f64 pio2_hi: 1.5707963267948966;
+		f64 pio2_lo: 6.123233995736766e-17;
+		f64 pio4_hi: 0.7853981633974483;
+		if ix >= 0x3ff00000                                        # |x| >= 1
+			if (((ix - 0x3ff00000) as u32) | (LowWord: x)) is 0 return x * pio2_hi + x * pio2_lo;   # +-pi/2
+			return (x - x) / (x - x);                              # |x| > 1: nan
+		;;
+		if ix < 0x3fe00000                                         # |x| < 0.5
+			if ix < 0x3e500000 return x;                           # |x| < 2^-26
+			return x + x * (AsinR: x * x);
+		;;
+		# 1 > |x| >= 0.5
+		f64 w: 1.0 - (Float.Abs: x);
+		f64 t: w * 0.5;
+		f64 r: (AsinR: t);
+		f64 s: (Float.Sqrt: t);
+		if ix >= 0x3FEF3333                                        # |x| > 0.975
+			t is pio2_hi - (2.0 * (s + s * r) - pio2_lo);
+		;;
+		else
+			w is (WithLow: s 0);
+			f64 c: (t - w * w) / (s + w);
+			f64 p: 2.0 * s * r - (pio2_lo - 2.0 * c);
+			f64 q: pio4_hi - 2.0 * w;
+			t is pio4_hi - (p - q);
+		;;
+		if hx > 0 return t;
+	[end: -t]
+
+	# the angle whose cosine is x, in radians: 0 to pi (nan outside -1 to 1)
+	[Acos: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int ix: hx & 0x7fffffff;
+		f64 pi: 3.141592653589793;
+		f64 pio2_hi: 1.5707963267948966;
+		f64 pio2_lo: 6.123233995736766e-17;
+		if ix >= 0x3ff00000                                        # |x| >= 1
+			if (((ix - 0x3ff00000) as u32) | (LowWord: x)) is 0
+				if hx > 0 return 0.0;                              # acos(1) = 0
+				return pi + 2.0 * pio2_lo;                         # acos(-1) = pi
+			;;
+			return (x - x) / (x - x);                              # |x| > 1: nan
+		;;
+		if ix < 0x3fe00000                                         # |x| < 0.5
+			if ix <= 0x3c600000 return pio2_hi + pio2_lo;          # |x| < 2^-57
+			f64 r: (AsinR: x * x);
+			return pio2_hi - (x - (pio2_lo - x * r));
+		;;
+		if hx < 0                                                  # x < -0.5
+			f64 z: (1.0 + x) * 0.5;
+			f64 s: (Float.Sqrt: z);
+			f64 w: (AsinR: z) * s - pio2_lo;
+			return pi - 2.0 * (s + w);
+		;;
+		# x > 0.5
+		f64 z: (1.0 - x) * 0.5;
+		f64 s: (Float.Sqrt: z);
+		f64 df: (WithLow: s 0);
+		f64 c: (z - df * df) / (s + df);
+		f64 w: (AsinR: z) * s + c;
+	[end: 2.0 * (df + w)]
+
+	# ---- hyperbolic functions
+
+	# the hyperbolic sine
+	[Sinh: f64 x: 0.0;]
+		int jx: (HighWord: x);
+		int ix: jx & 0x7fffffff;
+		if ix >= 0x7ff00000 return x + x;                          # inf or nan
+		f64 h: 0.5;
+		if jx < 0
+			h is -0.5;
+		;;
+		if ix < 0x40360000                                         # |x| < 22
+			if ix < 0x3e300000 return x;                           # |x| < 2^-28
+			f64 t: (Expm1: (Float.Abs: x));
+			if ix < 0x3ff00000 return h * (2.0 * t - t * t / (t + 1.0));
+			return h * (t + t / (t + 1.0));
+		;;
+		if ix < 0x40862E42 return h * (Exp: (Float.Abs: x));       # |x| < log(the largest f64)
+		u32 lx: (LowWord: x);
+		if ix < 0x408633CE or (ix is 0x408633ce and lx <= 0x8fb9f87d)   # up to where it overflows
+			f64 w: (Exp: 0.5 * (Float.Abs: x));
+			f64 t: h * w;
+			return t * w;
+		;;
+	[end: x * 1.0e307]
+
+	# the hyperbolic cosine
+	[Cosh: f64 x: 0.0;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix >= 0x7ff00000 return x * x;                          # inf or nan
+		if ix < 0x3fd62e43                                         # |x| < ln2 / 2
+			f64 t: (Expm1: (Float.Abs: x));
+			f64 w: 1.0 + t;
+			if ix < 0x3c800000 return w;                           # cosh(tiny) = 1
+			return 1.0 + (t * t) / (w + w);
+		;;
+		if ix < 0x40360000                                         # |x| < 22
+			f64 t: (Exp: (Float.Abs: x));
+			return 0.5 * t + 0.5 / t;
+		;;
+		if ix < 0x40862E42 return 0.5 * (Exp: (Float.Abs: x));
+		u32 lx: (LowWord: x);
+		if ix < 0x408633CE or (ix is 0x408633ce and lx <= 0x8fb9f87d)
+			f64 w: (Exp: 0.5 * (Float.Abs: x));
+			f64 t: 0.5 * w;
+			return t * w;
+		;;
+	[end: HUGE * HUGE]
+
+	# the hyperbolic tangent
+	[Tanh: f64 x: 0.0;]
+		int jx: (HighWord: x);
+		int ix: jx & 0x7fffffff;
+		if ix >= 0x7ff00000
+			if jx >= 0 return 1.0 / x + 1.0;                       # tanh(+inf) = 1
+			return 1.0 / x - 1.0;                                  # tanh(-inf) = -1, tanh(nan) = nan
+		;;
+		f64 z: 0.0;
+		if ix < 0x40360000                                         # |x| < 22
+			if ix < 0x3c800000 return x * (1.0 + x);               # |x| < 2^-55
+			if ix >= 0x3ff00000                                    # |x| >= 1
+				f64 t: (Expm1: 2.0 * (Float.Abs: x));
+				z is 1.0 - 2.0 / (t + 2.0);
+			;;
+			else
+				f64 t: (Expm1: -2.0 * (Float.Abs: x));
+				z is -t / (t + 2.0);
+			;;
+		;;
+		else
+			z is 1.0 - TINY;
+		;;
+		if jx >= 0 return z;
+	[end: -z]
+
+	# ---- roots
+
+	# the cube root
+	[Cbrt: f64 x: 0.0;]
+		int hx: (HighWord: x);
+		int sign: hx & (0x80000000 as int);
+		hx is hx ^ sign;
+		if hx >= 0x7ff00000 return x + x;                          # nan or inf: itself
+		if ((hx as u32) | (LowWord: x)) is 0 return x;             # +-0: itself
+		x is (WithHigh: x hx);                                     # |x|
+		f64 t: 0.0;
+		# to 5 bits
+		if hx < 0x00100000                                         # subnormal
+			t is (FromWords: 0x43500000 0);                        # 2^54
+			t is t * x;
+			t is (WithHigh: t (HighWord: t) / 3 + 696219795);
+		;;
+		else
+			t is (FromWords: hx / 3 + 715094163 0);
+		;;
+		# to 23 bits
+		f64 r: t * t / x;
+		f64 s: 0.5428571428571428 + r * t;
+		t is t * (0.35714285714285715 + 1.6071428571428572 / (s + 1.4142857142857144 + -0.7053061224489796 / s));
+		# to 20 bits, and larger than the root
+		t is (FromWords: (HighWord: t) + 1 0);
+		# one step of Newton's, to 53 bits
+		s is t * t;                                                # (exact)
+		r is x / s;
+		f64 w: t + t;
+		r is (r - t) / (w + r);
+		t is t + t * r;
+	[end: (WithHigh: t (HighWord: t) | sign)]
+
+	# the length of (x, y), sqrt(x^2 + y^2), without overflowing or underflowing on the way
+	[Hypot: f64 x: 0.0; f64 y: 0.0;]
+		int ha: (HighWord: x) & 0x7fffffff;
+		int hb: (HighWord: y) & 0x7fffffff;
+		f64 a: x;
+		f64 b: y;
+		if hb > ha
+			a is y;
+			b is x;
+			int j: ha;
+			ha is hb;
+			hb is j;
+		;;
+		a is (WithHigh: a ha);                                     # |a|
+		b is (WithHigh: b hb);                                     # |b|
+		if (ha - hb) > 0x3c00000 return a + b;                     # a/b > 2^60
+		int k: 0;
+		if ha > 0x5f300000                                         # a > 2^500
+			if ha >= 0x7ff00000                                    # inf or nan
+				f64 w: a + b;
+				if (((ha & 0xfffff) as u32) | (LowWord: a)) is 0
+					w is a;
+				;;
+				if (((hb ^ 0x7ff00000) as u32) | (LowWord: b)) is 0
+					w is b;
+				;;
+				return w;
+			;;
+			ha is ha - 0x25800000;                                 # both times 2^-600
+			hb is hb - 0x25800000;
+			k is k + 600;
+			a is (WithHigh: a ha);
+			b is (WithHigh: b hb);
+		;;
+		if hb < 0x20b00000                                         # b < 2^-500
+			if hb <= 0x000fffff                                    # subnormal b, or 0
+				if ((hb as u32) | (LowWord: b)) is 0 return a;
+				f64 t1: (FromWords: 0x7fd00000 0);                 # 2^1022
+				b is b * t1;
+				a is a * t1;
+				k is k - 1022;
+			;;
+			else                                                   # both times 2^600
+				ha is ha + 0x25800000;
+				hb is hb + 0x25800000;
+				k is k - 600;
+				a is (WithHigh: a ha);
+				b is (WithHigh: b hb);
+			;;
+		;;
+		# a and b of middling size
+		f64 w: a - b;
+		if w > b
+			f64 t1: (FromWords: ha 0);
+			f64 t2: a - t1;
+			w is (Float.Sqrt: t1 * t1 - (b * (-b) - t2 * (a + t1)));
+		;;
+		else
+			a is a + a;
+			f64 y1: (FromWords: hb 0);
+			f64 y2: b - y1;
+			f64 t1: (FromWords: ha + 0x00100000 0);
+			f64 t2: a - t1;
+			w is (Float.Sqrt: t1 * y1 - (w * (-w) - (t1 * y2 + t2 * b)));
+		;;
+		if k is not 0
+			f64 t1: (FromWords: 0x3ff00000 + (k << 20) 0);
+			return t1 * w;
+		;;
+	[end: w]
+}
