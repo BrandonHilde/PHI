@@ -2551,7 +2551,8 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            if (!type.IsNumeric)
+            // (an i64 or u64 too: the folder works them out whole, as 64 bits)
+            if (!type.IsNumeric && !type.IsWide)
             {
                 Error(c.Type.Span, "constants must be numbers");
                 return;

@@ -1,0 +1,22 @@
+# runs only in 32 and 64 bits: i64 and u64 are a 32-bit kernel's and a program's
+# A constant can be an i64 or u64, from numbers and other constants worked out when it's built.
+# Until 2026-11-23 `const u64` stopped with "constants must be numbers" (the rule was written
+# before PHI had 64-bit integers).
+phi.WideConstants:Library
+{
+	const u64 GB: 1073741824;
+	const u64 BIG: GB * 6 + 5;
+	const i64 BELOW: -GB * 3;
+	const u64 TOP: 0xFFFFFFFFFFFFFFFF;
+	const i64 SMALL: 7;
+	const int N: 2;
+
+	u64 total: BIG + 1;
+	i64 back: BELOW / 2;
+	log BIG ' ' BELOW ' ' TOP ' ' total ' ' back ' ' SMALL * N '\n';
+	log (Half: BIG);
+	log ' ' (BIG > GB) ' ' (BELOW < 0) ' ' (TOP is 0xFFFFFFFFFFFFFFFF) '\n';
+
+	[Half: u64 v: 0; : u64]
+	[end: v / 2]
+}

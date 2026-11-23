@@ -594,7 +594,8 @@ const f64 TAU: PI * 2.0;
 ```
 
 A constant's value must be known when the program is built. Constants take no memory and
-can be used as array sizes and inside `asm.` blocks (`{COM1}`).
+can be used as array sizes and inside `asm.` blocks (`{COM1}`). A constant can be an `i64` or
+`u64` too (`const u64 GB: 1073741824;`, `const u64 HEAP: GB * 6;`), worked out in 64 bits.
 
 A constant can be a number with a point (`const f64`, `const f32`, in 32-bit and 64-bit
 code): where it's used is the number, as if written there. Its value is numbers and other
