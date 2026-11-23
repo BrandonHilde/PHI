@@ -1,0 +1,45 @@
+# runs only in 32 and 64 bits: texts that grow
+# A method's own [atmost N] array of texts (str words[atmost 8];): added to, its count read, an
+# element read, and full when it's full. Until 2026-11-22 a macOS program couldn't do either: the
+# ARM code's frame for a method's table of texts had no room for its count (found in PHI OS's
+# render.phi under 1.0, which kept a count of its own instead).
+phi.LocalTextAtmost:Library
+{
+	debug (Words: 3) '\n';
+	debug (Words: 0) '\n';
+	debug (Full) '\n';
+	debug (Again) ' ' (Again) '\n';
+
+	# n words, the last read back; how many, ten times over, and the numbers' count
+	[Words: int n: 0;]
+		str words[atmost 8];
+		int nums[atmost 5];
+		while int i: 0; i < n; i++;
+			words++ 'w';
+			nums++ i;
+		;;
+		if words.len > 0
+			debug words:(words.len - 1) ' ';
+		;;
+	[end: words.len * 10 + nums.len]
+
+	# one past the most: an error that can be caught
+	[Full: : int]
+		if call Overfill throws err
+			return 1;
+		;;
+	[end: 0]
+
+	[Overfill]
+		str two[atmost 2];
+		two++ 'a';
+		two++ 'b';
+		two++ 'c';
+	[end]
+
+	# a new one each time the method's called
+	[Again]
+		str once[atmost 3];
+		once++ 'x';
+	[end: once.len]
+}

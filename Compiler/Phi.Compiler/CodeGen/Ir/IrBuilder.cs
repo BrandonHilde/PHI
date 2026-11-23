@@ -2313,6 +2313,9 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             NameExpr { Symbol: VariableSymbol pv } when paramViews.ContainsKey(pv) => true,
             NameExpr { Symbol: VariableSymbol lv } when localViews.ContainsKey(lv) => true,
+            NameExpr { Symbol: VariableSymbol table } when localTables.ContainsKey(table) && table.Type.Filled => true,
+            // (where an [atmost N] table of the method's own is, for its count: the table itself)
+            NameExpr { Symbol: FieldPathSymbol { Offset: 0 } tf } when localTables.ContainsKey(tf.Root) && tf.Root.Type.Filled => true,
             NameExpr { Symbol: VariableSymbol pinned } when addressed.Contains(pinned) => true,
             NameExpr { Symbol: VariableSymbol v } => frameStructs.ContainsKey(v) || !Ours(v) && !v.Grows && !v.TextRef && !v.Type.Open && AnyGlobal(v) != null,
             NameExpr { Symbol: FieldPathSymbol f } => frameStructs.ContainsKey(f.Root) || GlobalStruct(f.Root) != null
@@ -2347,6 +2350,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 case NameExpr { Symbol: VariableSymbol lv } when localViews.TryGetValue(lv, out string? localAt):
                     Emit(new AddrI { Dst = d, Label = localAt });
                     return d;
+                case NameExpr { Symbol: VariableSymbol table } when table.Type.Filled && localTables.TryGetValue(table, out string? tableAt):
+                    Emit(new AddrI { Dst = d, Label = tableAt });
+                    return d;
                 case NameExpr { Symbol: VariableSymbol pv } when paramViews.TryGetValue(pv, out string? viewAt):
                     Emit(new AddrI { Dst = d, Label = viewAt });
                     return d;
@@ -2355,6 +2361,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     return d;
                 case NameExpr { Symbol: FieldPathSymbol f } when frameStructs.ContainsKey(f.Root):
                     Emit(new AddrI { Dst = d, Label = FramePlace(f.Root, f.Offset) });
+                    return d;
+                case NameExpr { Symbol: FieldPathSymbol { Offset: 0 } tf } when tf.Root.Type.Filled && localTables.TryGetValue(tf.Root, out string? ownTable):
+                    Emit(new AddrI { Dst = d, Label = ownTable });
                     return d;
                 case NameExpr { Symbol: FieldPathSymbol f }:
                     Emit(new AddrI { Dst = d, Label = $"{GlobalStruct(f.Root) ?? AnyGlobal(f.Root)} + {f.Offset}" });

@@ -415,13 +415,19 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>Each one's table: where its slots are (then its rooms, when its texts grow).</summary>
         readonly Dictionary<VariableSymbol, string> localTables = new();
 
-        /// <summary>The frame for each: the table, then each element's buffer; each slot set to its buffer (its room, its size, in data), as the generator's frame start.</summary>
+        /// <summary>
+        /// The frame for each: the table, then each element's buffer; each slot set to its buffer (its
+        /// room, its size, in data), as the generator's frame start. An [atmost N] one keeps its
+        /// rooms and then its count after the table, where the type says (CountOffset), so it can be
+        /// added to and its count read as a class's is.
+        /// </summary>
         void PlaceLocalTables()
         {
             foreach (VariableSymbol v in method.Locals.Where(LocalTable))
             {
                 int count = v.Type.Length, room = (v.Capacity + 7) / 8 * 8;
-                int tableBytes = PhiType.AddressSize * count * (v.GrowingElements ? 2 : 1);
+                int tableBytes = v.Type.Filled ? (v.Type.CountOffset + 4 + 7) / 8 * 8
+                                               : PhiType.AddressSize * count * (v.GrowingElements ? 2 : 1);
                 for (int k = 0; k < (tableBytes + count * room) / 8; k++) fn.NewHome();
                 int top = 8 * fn.Homes;
                 string table = $"rbp - {top}";
