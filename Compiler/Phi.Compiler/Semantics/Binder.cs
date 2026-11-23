@@ -586,18 +586,15 @@ namespace Phi.Compiler.Semantics
             file = m.Decl.File;
             unsafeDepth = 0;
 
-            // [end: ...] sees the method's variables as they are at its end. When it's bound from
-            // elsewhere (a call met before the method's own statements), the block names in sight
-            // are another method's or none, so it gets this method's own.
+            // [end: ...] sees the method's variables as they are at its end, wherever it's bound
+            // from: a call met before the method's own statements (where the block names in sight
+            // are another method's, or none), or the method's own first return, which can be in a
+            // block whose own variable of that name is in sight there (and a later one isn't yet)
             MethodSymbol? outerBlockMethod = blockMethod;
-            List<Dictionary<string, VariableSymbol>>? outerBlockNames = null;
-            if (blockMethod != m)
-            {
-                outerBlockNames = blockNames.ToList();
-                blockNames.Clear();
-                blockNames.Add(endNames.TryGetValue(m.Decl, out var atEnd) ? new(atEnd) : new());
-                blockMethod = m;
-            }
+            List<Dictionary<string, VariableSymbol>> outerBlockNames = blockNames.ToList();
+            blockNames.Clear();
+            blockNames.Add(endNames.TryGetValue(m.Decl, out var atEnd) ? new(atEnd) : new());
+            blockMethod = m;
 
             allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
@@ -643,12 +640,9 @@ namespace Phi.Compiler.Semantics
 
             file = outerFile;
             unsafeDepth = outerUnsafe;
-            if (outerBlockNames != null)
-            {
-                blockNames.Clear();
-                blockNames.AddRange(outerBlockNames);
-                blockMethod = outerBlockMethod;
-            }
+            blockNames.Clear();
+            blockNames.AddRange(outerBlockNames);
+            blockMethod = outerBlockMethod;
             m.ResultBinding = false;
             m.ResultBound = true;
             BindFails(m);

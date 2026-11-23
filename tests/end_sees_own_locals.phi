@@ -4,12 +4,42 @@
 # the method's own statements), didn't see the second one: it took another class's variable of
 # that name (17 here, not 13), or, where there was none, didn't build ("'v' is declared only
 # inside blocks ..."). Found in PHI-Code-Library's VP8 decoder (phi-notes.md, "PHI 1.0").
+# Then, the same day, the other way in: a method whose own statements come first (OwnFirst, bound
+# before anything calls it) worked out its [end: ...] at its first return, and took whichever
+# variable of that name was in sight there: the block's (102 and 0 here, not 4 and 10), or none
+# ("declared only inside blocks", met porting fdlibm's log).
+phi.OwnFirst:Library
+{
+	[Of: int a: 0;]
+		if a < 3
+			int r: 100 + a;
+			if a is 1
+				return r;
+			;;
+		;;
+		int r: a * 2;
+	[end: r]
+
+	[Before: int a: 0;]
+		if a < 3
+			if a is 1
+				return 5;
+			;;
+			int r: 100;
+			return r;
+		;;
+		int r: a * 2;
+	[end: r]
+}
+
 phi.EndSeesOwnLocals:Library
 {
 	int v: 7;
 	debug (Sees.Again: 1) ' ' (Sees.Again: 9) '\n';
 	debug (Sees.Loop: 3) '\n';
 	debug (Sees.Branches: 0) ' ' (Sees.Branches: 1) '\n';
+	debug (OwnFirst.Of: 1) ' ' (OwnFirst.Of: 2) ' ' (OwnFirst.Of: 5) '\n';
+	debug (OwnFirst.Before: 1) ' ' (OwnFirst.Before: 2) ' ' (OwnFirst.Before: 5) '\n';
 }
 
 phi.Sees:Library
