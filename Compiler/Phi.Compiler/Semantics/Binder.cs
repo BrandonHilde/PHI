@@ -519,6 +519,7 @@ namespace Phi.Compiler.Semantics
                 }
             }
             LeaveOutUnusedTemplateMethods();
+            if (library == null) LeaveOutUnusedFloatMethods();
 
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
@@ -2210,6 +2211,39 @@ namespace Phi.Compiler.Semantics
                 if (used.Contains(m))
                     foreach (Diagnostic d in wrong) diagnostics.Add(d);
         }
+
+        /// <summary>
+        /// lang.float, which a program gets whole when it calls any of it (Float.Log), keeps only
+        /// what it uses: the methods called from outside it, and what they call. One Float.Log
+        /// was all of fdlibm (42 KB more in a PHI OS program, 93 KB in a Mac's). A compiled
+        /// library keeps it whole, as what uses the library may call any of it.
+        /// </summary>
+        void LeaveOutUnusedFloatMethods()
+        {
+            var floats = units.Values.SelectMany(u => u.Methods).Where(m => IsFloatLibrary(m.Decl.File)).ToList();
+            if (floats.Count == 0) return;
+            var mine = floats.ToHashSet();
+            var used = new HashSet<MethodSymbol>();
+            for (bool more = true; more;)
+            {
+                more = false;
+                foreach (MethodSymbol m in floats)
+                    if (!used.Contains(m) && (m.UsedOutsideMethods || m.UsedBy.Any(by => !mine.Contains(by) || used.Contains(by))))
+                    {
+                        used.Add(m);
+                        more = true;
+                    }
+            }
+            foreach (MethodSymbol m in floats.Where(m => !used.Contains(m)))
+            {
+                units[m.Unit].Methods.Remove(m);
+                methodsByFullName.Remove((m.Unit, m.Name));
+                m.Decl.Owner.Methods.Remove(m.Decl);
+                m.Decl.Symbol = null;
+            }
+        }
+
+        static bool IsFloatLibrary(SourceFile file) => file.Compiled == null && file.Path.Replace('\\', '/').EndsWith("lib/phi/lang/float.phi");
 
         /// <summary>The structs that take types, by name: each use of one is a struct of its own by now (Templates.Expand).</summary>
         readonly Dictionary<string, StructTemplate> templates = new();

@@ -148,8 +148,6 @@ namespace Phi.Compiler.Semantics
             // ---- floating point (worked out on the FPU, in 32-bit kernels and programs)
             new() { Name = "Float.Sqrt", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fsqrt", Description = "the square root" },
             new() { Name = "Float.Abs", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fabs", Description = "without its sign" },
-            new() { Name = "Float.Sin", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fsin", Description = "the sine of x radians" },
-            new() { Name = "Float.Cos", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fcos", Description = "the cosine of x radians" },
             new() { Name = "Float.Round", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 0, Description = "the nearest whole number (halves to even)" },
             new() { Name = "Float.Floor", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 1, Description = "the whole number at or below" },
             new() { Name = "Float.Ceil", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 2, Description = "the whole number at or above" },

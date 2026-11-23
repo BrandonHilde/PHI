@@ -259,10 +259,10 @@ log (Float.Sqrt: 2) ' ' (Float.Round: 2.5); # 1.414214 2
   end, and an exponent from 10^12 up and under 0.0001; `inf`, `-inf` and `nan` too.
 - `%` gives what's left over with the left's sign (`-7.5 % 2` is -1.5, like C's `fmod`);
   `~`, `&`, `|`, `^` and the shifts work only on whole numbers.
-- `Float.Sqrt`, `Abs`, `Sin`, `Cos` (radians), `Round` (halves to even), `Floor`, `Ceil`
-  and `Trunc` each take one number and give an `f64`.
-- The rest of C's maths is there too, without a `use`: `Float.Log`, `Log2`, `Log10`, `Log1p`
-  (log of 1 + x), `Exp`, `Expm1` (e^x - 1), `Pow: x y`, `Tan`, `Atan`, `Atan2: y x`, `Asin`,
+- `Float.Sqrt`, `Abs`, `Round` (halves to even), `Floor`, `Ceil` and `Trunc` each take one
+  number and give an `f64`.
+- The rest of C's maths is there too, without a `use`: `Float.Sin`, `Cos` and `Tan` (radians),
+  `Log`, `Log2`, `Log10`, `Log1p` (log of 1 + x), `Exp`, `Expm1` (e^x - 1), `Pow: x y`, `Atan`, `Atan2: y x`, `Asin`,
   `Acos`, `Sinh`, `Cosh`, `Tanh`, `Cbrt`, `Hypot: x y` and `Scale: x n` (x times 2^n), and an
   `f64`'s halves (`HighWord`, `LowWord`, `FromWords: high low`, `WithHigh`, `WithLow`). They're
   `lang.float`, which a program that calls one gets: fdlibm's algorithms (what browsers'
@@ -4169,7 +4169,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.stopwatch` | struct `Stopwatch` (32-bit kernels and programs, and programs on Linux, Windows and macOS): how long something took, in real time. `Stopwatch watch;` then `Start` (or carry on), `Stop`, `Restart` (nothing, and running), `Reset` (nothing, and stopped); `Milliseconds` → (an int), `Microseconds` → (a u64), `Seconds` → (an f64), each readable while it runs, and `Ticks` →. Any number run at once. It reads the CPU's counter (class `Clock`: `Count` →, `PerMillisecond` →), whose speed is measured against `OS.GetTicks` the first time, which takes 10 ms once (`call Clock.Measure;` at the start gets it over with) |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
-| `lang.float` | class `Float` (32-bit kernels and programs; there without a `use` once one is called): `Log`, `Log2`, `Log10`, `Log1p`, `Exp`, `Expm1`, `Pow: x y`, `Tan`, `Atan`, `Atan2: y x`, `Asin`, `Acos`, `Sinh`, `Cosh`, `Tanh`, `Cbrt`, `Hypot: x y`, `Scale: x n`, and an f64's halves: `HighWord`, `LowWord`, `FromWords: high low`, `WithHigh: x high`, `WithLow: x low`. fdlibm's algorithms, the same to the bit on every system (made by tools/float/gen.py) |
+| `lang.float` | class `Float` (32-bit kernels and programs; there without a `use` once one is called, and only what's called is kept): `Sin`, `Cos`, `Log`, `Log2`, `Log10`, `Log1p`, `Exp`, `Expm1`, `Pow: x y`, `Tan`, `Atan`, `Atan2: y x`, `Asin`, `Acos`, `Sinh`, `Cosh`, `Tanh`, `Cbrt`, `Hypot: x y`, `Scale: x n`, and an f64's halves: `HighWord`, `LowWord`, `FromWords: high low`, `WithHigh: x high`, `WithLow: x low`. fdlibm's algorithms, the same to the bit on every system (made by tools/float/gen.py) |
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 billion or more to any but `Equal` is an error at the call |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |

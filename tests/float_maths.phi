@@ -1,6 +1,6 @@
 # runs only in 32 and 64 bits: f64 is a 32-bit kernel's and a program's
 # Float.Log, Exp, Pow, Tan, Atan2 and the rest of C's maths (lang.float, fdlibm's algorithms in
-# PHI, there without a `use`): C's answers for the special values, and every bit of 400 answers
+# PHI, there without a `use`; Sin and Cos too, since 2026-11-22): C's answers for the special values, and every bit of 400 answers
 # each over each one's range, summed. The sums are the same on an x86 kernel and an ARM Mac:
 # the answers are, to the last bit (fdlibm's own C gives them too: checked 2026-11-22).
 phi.FloatMaths:Library
@@ -13,6 +13,7 @@ phi.FloatMaths:Library
 	log 'log1p: ' (Float.Log1p: -1.0) ' ' (Float.Log1p: 1e-20) ' ' (Float.Log1p: -2.0) '\n';
 	log 'exp: ' (Float.Exp: 0.0) ' ' (Float.Exp: 1.0) ' ' (Float.Exp: 710.0) ' ' (Float.Exp: -746.0) ' ' (Float.Expm1: 1e-10) '\n';
 	log 'pow: ' (Float.Pow: 2.0 10.0) ' ' (Float.Pow: -8.0 (1.0 / 3.0)) ' ' (Float.Pow: -2.0 3.0) ' ' (Float.Pow: 0.0 -1.0) ' ' (Float.Pow: 1.0 (0.0 / 0.0)) '\n';
+	log 'sin cos: ' (Float.Sin: 0.0) ' ' (Float.Sin: -0.0) ' ' (Float.Cos: 0.0) ' ' (Float.Sin: 1e22) ' ' (Float.Cos: 1e22) ' ' (Float.Sin: 3.141592653589793) ' ' (Float.Cos: (1.0 / 0.0)) '\n';
 	log 'trig: ' (Float.Tan: 0.0) ' ' (Float.Tan: 1e22) ' ' (Float.Atan: 1.0) ' ' (Float.Asin: 1.0) ' ' (Float.Acos: -1.0) ' ' (Float.Asin: 2.0) '\n';
 	log 'atan2: ' (Float.Atan2: 0.0 -1.0) ' ' (Float.Atan2: -0.0 -1.0) ' ' (Float.Atan2: 1.0 0.0) ' ' (Float.Atan2: -1.0 -1.0) '\n';
 	log 'hyperbolic: ' (Float.Sinh: 1.0) ' ' (Float.Cosh: 0.0) ' ' (Float.Tanh: 30.0) ' ' (Float.Tanh: -30.0) '\n';
@@ -26,6 +27,9 @@ phi.FloatMaths:Library
 	call Sums: 'exp' -40 10 true;
 	call Sums: 'expm1' -60 10 true;
 	call Sums: 'tan' -30 1023 true;
+	call Sums: 'sin' -30 1023 true;
+	call Sums: 'cos' -30 1023 true;
+	call Sums: 'sin' -30 8 true;
 	call Sums: 'atan' -40 80 true;
 	call Sums: 'asin' -40 (-1) true;
 	call Sums: 'acos' -40 (-1) true;
@@ -86,6 +90,12 @@ phi.FloatMaths:Library
 			;;
 			elif name is 'tan'
 				r is (Float.Tan: x);
+			;;
+			elif name is 'sin'
+				r is (Float.Sin: x);
+			;;
+			elif name is 'cos'
+				r is (Float.Cos: x);
 			;;
 			elif name is 'atan'
 				r is (Float.Atan: x);

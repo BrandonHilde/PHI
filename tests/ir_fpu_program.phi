@@ -1,6 +1,8 @@
-# The FPU's functions through the intermediate form (Float.Floor, Ceil, Round, Trunc, Abs, Sqrt,
-# Cos, Sin) and % on floats (fprem, with the left's sign): the same x87 instructions the
-# generator uses, so the same answers, edges included; compared with PHI_IR=0's output.
+# The FPU's functions through the intermediate form (Float.Floor, Ceil, Round, Trunc, Abs, Sqrt)
+# and % on floats (fprem, with the left's sign): the same x87 instructions the generator uses,
+# so the same answers, edges included; compared with PHI_IR=0's output. Float.Cos and Sin are
+# lang.float's since 2026-11-22 (fdlibm's, in PHI): cos and sin of 1e300 are -0.575386 and
+# -0.817882, where the x87's fcos and fsin left it 1e300.
 phi.IrFpu:Program
 {
 	call Show: 2.5;

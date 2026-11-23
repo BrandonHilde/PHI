@@ -8,10 +8,10 @@
 #
 # There's no need to `use` it: a program that calls Float.Log (or any of these) gets it.
 # Float.Sqrt, Abs, Floor, Ceil, Round and Trunc stay the processor's own (they're exact
-# everywhere); Float.Sin and Cos are the built-ins' (see docs/language.md).
+# everywhere).
 #
 #   Log Log2 Log10 Log1p (log of 1 + x)   Exp Expm1 (e^x - 1)   Pow: x y
-#   Tan Atan Atan2: y x  Asin Acos        Sinh Cosh Tanh        Cbrt   Hypot: x y
+#   Sin Cos Tan Atan Atan2: y x Asin Acos Sinh Cosh Tanh        Cbrt   Hypot: x y
 #   Scale: x n (x times 2^n, C's scalbn)
 #   HighWord LowWord FromWords: high low  WithHigh: x high  WithLow: x low (an f64's halves)
 #
@@ -1000,6 +1000,59 @@ phi.Float:Library
 	[end: n & 7]
 
 	# ---- trigonometry
+
+	# sin(x + y) for |x| ~<= pi/4, y the tail of x (none if tail is false)
+	[SinPart: f64 x: 0.0; f64 y: 0.0; bln tail: false;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix < 0x3e400000                                         # |x| < 2^-27
+			if (x as int) is 0 return x;
+		;;
+		f64 z: x * x;
+		f64 v: z * x;
+		f64 r: {0x3F8111111110F8A6} + z * ({0xBF2A01A019C161D5} + z * ({0x3EC71DE357B1FE7D} + z * ({0xBE5AE5E68A2B9CEB} + z * {0x3DE5D93A5ACFD57C})));
+		if not tail return x + v * ({0xBFC5555555555549} + z * r);
+	[end: x - ((z * (0.5 * y - v * r) - y) - v * {0xBFC5555555555549})]
+
+	# cos(x + y) for |x| ~<= pi/4, y the tail of x
+	[CosPart: f64 x: 0.0; f64 y: 0.0;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix < 0x3e400000                                         # |x| < 2^-27
+			if (x as int) is 0 return 1.0;
+		;;
+		f64 z: x * x;
+		f64 r: z * ({0x3FA555555555554C} + z * ({0xBF56C16C16C15177} + z * ({0x3EFA01A019CB1590} + z * ({0xBE927E4F809C52AD} + z * ({0x3E21EE9EBDB4B1C4} + z * {0xBDA8FAE9BE8838D4})))));
+		if ix < 0x3FD33333 return 1.0 - (0.5 * z - (z * r - x * y));   # |x| < 0.3
+		f64 qx: 0.28125;                                           # (|x| > 0.78125)
+		if ix <= 0x3fe90000
+			qx is (FromWords: ix - 0x00200000 0);                  # x/4
+		;;
+		f64 hz: 0.5 * z - qx;
+		f64 a: 1.0 - qx;
+	[end: a - (hz - (z * r - x * y))]
+
+	# the sine of x radians (of any size: until 2026-11-22 the built-in's was x itself from 2^63 up)
+	[Sin: f64 x: 0.0;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix <= 0x3fe921fb return (SinPart: x 0.0 false);         # |x| ~<= pi/4
+		if ix >= 0x7ff00000 return x - x;                          # inf or nan: nan
+		f64 y[2];
+		int n: (RemPio2: x addr y:0) & 3;
+		if n is 0 return (SinPart: y:0 y:1 true);
+		if n is 1 return (CosPart: y:0 y:1);
+		if n is 2 return -(SinPart: y:0 y:1 true);
+	[end: -(CosPart: y:0 y:1)]
+
+	# the cosine of x radians
+	[Cos: f64 x: 0.0;]
+		int ix: (HighWord: x) & 0x7fffffff;
+		if ix <= 0x3fe921fb return (CosPart: x 0.0);               # |x| ~<= pi/4
+		if ix >= 0x7ff00000 return x - x;                          # inf or nan: nan
+		f64 y[2];
+		int n: (RemPio2: x addr y:0) & 3;
+		if n is 0 return (CosPart: y:0 y:1);
+		if n is 1 return -(SinPart: y:0 y:1 true);
+		if n is 2 return -(CosPart: y:0 y:1);
+	[end: (SinPart: y:0 y:1 true)]
 
 	# tan(x + y) for |x| ~<= pi/4, y the tail of x; or -1/tan(x + y) if odd is -1
 	[TanPart: f64 x: 0.0; f64 y: 0.0; int odd: 1;]
