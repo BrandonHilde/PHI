@@ -519,7 +519,8 @@ namespace Phi.Compiler.Semantics
                 }
             }
             LeaveOutUnusedTemplateMethods();
-            if (library == null) LeaveOutUnusedFloatMethods();
+            // (a compiled library's calls into lang.float aren't seen here: with one that used it, all of it stays)
+            if (library == null && !program.CompiledLibraries.Any(c => c.Modules.Contains("lang.float"))) LeaveOutUnusedFloatMethods();
 
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();

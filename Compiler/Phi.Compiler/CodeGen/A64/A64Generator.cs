@@ -198,6 +198,7 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine("\tmov w0, #0");
             output.AppendLine("\tb phi_exit");
             output.Append(code);
+            output.AppendLine("Lphi_line_end:");
             foreach (LibraryFile lib in library)
             {
                 output.AppendLine();
@@ -638,7 +639,8 @@ namespace Phi.Compiler.CodeGen.A64
 
         internal void MarkLine(Node node)
         {
-            string label = program.Library != null ? $"{libraryPrefix}_line_{lineMarks.Count}" : $"phi_line_{lineMarks.Count}";
+            // (assembler-local: no symbol each, and phi_lines counts from the object's own code)
+            string label = program.Library != null ? $"L{libraryPrefix}_line_{lineMarks.Count}" : $"Lphi_line_{lineMarks.Count}";
             code.AppendLine($"{label}:");
             int line = file.GetLocation(node.Span.Start).Line;
             lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
@@ -664,20 +666,7 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine("; ---- data");
             EmitTypeTables(output);
             EmitVecConstants(output);
-            // each line's code: a count, then its address, its line and its file's name, 8 bytes each
-            // (absolute addresses: in __DATA, which the loader moves with the program)
-            output.AppendLine("\t.section __DATA,__const");
-            output.AppendLine("\t.p2align 3");
-            output.AppendLine("phi_lines:");
-            // (then each compiled library's, which the linker puts after the program's code, in order)
-            var marks = lineMarks.ToList();
-            foreach (CompiledTarget compiled in unit.CompiledLibraries.Where(c => c.Lines.Count > 0))
-            {
-                foreach (LibraryLine l in compiled.Lines) marks.Add(($"{compiled.Prefix}_line_{l.Offset}", l.Line, StringLabel(l.File)));
-                marks.Add(($"{compiled.Prefix}_line_end", 0, "0"));
-            }
-            output.AppendLine($"\t.quad {marks.Count}");
-            foreach (var (label, line, name) in marks) output.AppendLine($"\t.quad {label}, {line}, {name}");
+            EmitLineTable(output);
             // (the texts written in the program are writable, as x86's are: code may write through a ptr<u8> to one)
             output.AppendLine("\t.section __DATA,__data");
             foreach (var (text, label) in strings)
@@ -693,6 +682,47 @@ namespace Phi.Compiler.CodeGen.A64
                 if (DataFor(v) is string d) output.Append(d);
                 else NotYet(program.File, default, $"a class's variable of its kind ({v.Name}, {v.Type})");
             }
+        }
+
+        /// <summary>
+        /// Where each line's code starts, for an error's line (throw.s's phi_line_at). Each object
+        /// has a table of its own: where its code starts, its files' names, how many marks, then
+        /// each mark in 8 bytes: its offset in the object's code, and its file (top 12 bits) and
+        /// line (20 bits); the last one, of line 0, is where the code ends. The offsets are
+        /// differences of labels in one section, which the assembler works out, and the labels
+        /// are its own (L...): until 2026-11-22 each line was an 8-byte address that the loader
+        /// had to fix up and a global symbol, 24 bytes of table and about 60 of __LINKEDIT a line
+        /// (PHI OS's browser: 16 MB and 20 MB of its 41). A program's phi_lines lists its table
+        /// and each compiled library's.
+        /// </summary>
+        void EmitLineTable(StringBuilder output)
+        {
+            bool library = program.Library != null;
+            string table = library ? $"{libraryPrefix}_lines" : "Lphi_own_lines";
+            string codeBase = library ? libraryUnit!.Target.StartLabel : "phi_image_base";
+            string end = library ? $"L{libraryPrefix}_line_end" : "Lphi_line_end";
+            var files = new Dictionary<string, int>();
+            foreach (var mark in lineMarks) files.TryAdd(mark.File, files.Count);
+            if (files.Count > 4095)
+            {
+                NotYet(program.File, default, $"code from {files.Count} files in one program or library (its line table holds 4095)");
+                return;
+            }
+            output.AppendLine("\t.section __DATA,__const");
+            output.AppendLine("\t.p2align 3");
+            output.AppendLine($"{table}:");
+            output.AppendLine($"\t.quad {codeBase}, L{table}_files");
+            output.AppendLine($"\t.long {lineMarks.Count + 1}, 0");
+            foreach (var (label, line, name) in lineMarks)
+                output.AppendLine($"\t.long {label} - {codeBase}, {(files[name] << 20) | Math.Min(line, 0xFFFFF)}");
+            output.AppendLine($"\t.long {end} - {codeBase}, 0");
+            output.AppendLine($"L{table}_files:");
+            foreach (string name in files.Keys) output.AppendLine($"\t.quad {name}");
+            if (library) return;
+            var tables = unit.CompiledLibraries.Where(c => c.Lines.Count > 0).Select(c => $"{c.Prefix}_lines").Prepend(table).ToList();
+            output.AppendLine("phi_lines:");
+            output.AppendLine($"\t.quad {tables.Count}");
+            foreach (string t in tables) output.AppendLine($"\t.quad {t}");
         }
 
         /// <summary>A class's variable in the program's data, laid out as x86's generator lays it out (its DataFor).</summary>

@@ -56,7 +56,7 @@ namespace Phi.Compiler.CodeGen.A64
             }
             foreach (RawBlockDecl block in unit.RawBlocks.Where(r => !program.IsOutside(r.File))) EmitRawBlock(block);
             if (failed) return "";
-            code.AppendLine($"{libraryPrefix}_line_end:");
+            code.AppendLine($"L{libraryPrefix}_line_end:");
             EmitObjectRoutines();
             if (failed) return "";
 
@@ -80,10 +80,9 @@ namespace Phi.Compiler.CodeGen.A64
                 t.Lines.Add(new LibraryLine(0, k, line, strings.First(p => p.Value == name).Key));
             }
 
-            var exports = new List<string> { t.StartLabel, $"{libraryPrefix}_line_end" };
+            var exports = new List<string> { t.StartLabel, $"{libraryPrefix}_lines" };
             exports.AddRange(unit.Methods.Where(m => !m.IsOutside).Select(m => Sym(m.Label)));
             exports.AddRange(unit.Variables.Where(v => !v.IsOutside && !v.IsLocal && !v.Type.IsError).Select(v => Sym(v.Label)).Distinct());
-            exports.AddRange(Enumerable.Range(0, lineMarks.Count).Select(k => $"{libraryPrefix}_line_{k}"));
             string text = code.ToString() + data;
             var defined = Regex.Matches(text, @"^([A-Za-z_$][\w$.]*):", RegexOptions.Multiline).Select(m => m.Groups[1].Value).ToHashSet();
             defined.Add(t.StartLabel);

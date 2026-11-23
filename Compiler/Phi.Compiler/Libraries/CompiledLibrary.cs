@@ -143,7 +143,7 @@ namespace Phi.Compiler.Libraries
         /// Not this version's business: the standard library's modules, which each library
         /// records for itself (CompiledTarget.ModuleMarks), and anything else in the compiler.
         /// </summary>
-        public const string AbiVersion = "1.2";
+        public const string AbiVersion = "1.3";
 
         /// <summary>The file's first value after its name: which <see cref="AbiVersion"/> its code is for.</summary>
         static string Header => $"abi {AbiVersion}";

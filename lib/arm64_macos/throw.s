@@ -162,29 +162,52 @@ phi_fault_entry:
 	b phi_throw
 
 ; x0 = an address in the program's code -> w0 = the line it's on, x1 = its file's name; 0 and
-; 0 when it isn't PHI code (the runtime) or isn't known (the program's phi_lines: a count,
-; then each line's address, line and file, 8 bytes each). Changes x9-x12 only.
+; 0 when it isn't PHI code (the runtime) or isn't known. phi_lines is a count, then a table for
+; the program and each compiled library: where its code starts, its files' names, how many
+; marks, then each mark in 8 bytes, its offset in that code (4) and its file (top 12 bits) and
+; line (20 bits), the last of line 0 where the code ends (A64Generator.EmitLineTable). The
+; mark nearest at or before the address, in any table, is its line. Changes x9-x17 only (its
+; one caller, phi_fault_entry, is on its way to phi_throw, and keeps what it needs in x19, x20).
 phi_line_at:
 	adrp x9, phi_lines@PAGE
 	add x9, x9, phi_lines@PAGEOFF
-	ldr x10, [x9], #8
-	mov x11, #0                 ; the last mark at or before the address
-Lthrow_line_next:
+	ldr x10, [x9], #8           ; tables
+	mov x15, #-1                ; how far before the address the nearest mark so far is
+	mov x16, #0                 ; its table
+	mov w17, #0                 ; its file and line
+Lthrow_line_table:
 	cbz x10, Lthrow_line_found
-	ldr x12, [x9]
-	cmp x12, x0
-	b.hi Lthrow_line_found
-	mov x11, x9
-	add x9, x9, #24
+	ldr x11, [x9], #8           ; a table
 	sub x10, x10, #1
-	b Lthrow_line_next
+	ldr x12, [x11]              ; where its code starts
+	subs x12, x0, x12           ; the address, in its code
+	b.lo Lthrow_line_table
+	lsr x13, x12, #32
+	cbnz x13, Lthrow_line_table ; (4 GB on: not its)
+	ldr w13, [x11, #16]         ; its marks
+	add x14, x11, #24
+Lthrow_line_mark:
+	cbz w13, Lthrow_line_table
+	ldr w1, [x14]               ; its offset (x1 is free until the answer)
+	cmp x1, x12
+	b.hi Lthrow_line_table      ; past the address: the one before was this table's last
+	sub x1, x12, x1
+	cmp x1, x15
+	b.hs Lthrow_line_skip
+	mov x15, x1
+	mov x16, x11
+	ldr w17, [x14, #4]
+Lthrow_line_skip:
+	add x14, x14, #8
+	sub w13, w13, #1
+	b Lthrow_line_mark
 Lthrow_line_found:
-	mov w0, #0
+	and w0, w17, #0xFFFFF
 	mov x1, #0
-	cbz x11, Lthrow_line_done
-	ldr w0, [x11, #8]
 	cbz w0, Lthrow_line_done
-	ldr x1, [x11, #16]
+	lsr w17, w17, #20
+	ldr x1, [x16, #8]           ; its files' names
+	ldr x1, [x1, x17, lsl #3]
 Lthrow_line_done:
 	ret
 
