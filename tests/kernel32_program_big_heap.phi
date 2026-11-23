@@ -1,0 +1,16 @@
+# needs 512 MB of memory: a program's heap of 300 MB
+# A program's heap on PHI OS grows as far as the program says (call Heap.Limit) and the machine
+# has memory (kernel32_program_big_heap.rootfs). Up to 1.0 the kernel stopped every heap at
+# 124 MB (proc.process's HEAP_LIMIT was 0x48000000) whatever the machine had, and nothing a
+# program could do gave it more: PHI OS's browser met it with YouTube and with Wikipedia's
+# mathematics. The default is still 128 MB, and the kernel has all the memory back after.
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int code: (Process.Wait: (Process.Spawn: 'BIGHEAP.BIN'));
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

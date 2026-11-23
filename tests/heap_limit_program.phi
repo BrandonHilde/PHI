@@ -1,4 +1,5 @@
-# How big a program's heap grows is the program's to say (Heap.most_bytes in memory.program_heap):
+# How big a program's heap grows is the program's to say (Heap.Limit, or Heap.most_bytes as in 1.0, in
+# memory.program_heap):
 # 0, the default, is 128 MB in 32-bit code and the system's own limit in 64-bit; a smaller number
 # holds it to less, and a bigger one lets it have more, as far as the system can give.
 phi.HeapLimitProgram:Program
@@ -15,8 +16,8 @@ phi.HeapLimitProgram:Program
 	;;
 	log 'held to 4 MB: ' got ' blocks of 1 MB\n';
 
-	# let go: there's room again, and more once it's raised
-	Heap.most_bytes is 12582912;
+	# let go: there's room again, and more once it's raised (call Heap.Limit says the same)
+	call Heap.Limit: 12582912;
 	ptr<u8> more: new u8[4194304];
 	log 'raised to 12 MB, 4 MB more: ' (more is not 0) '\n';
 	ptr<u8> past: new u8[16777216];

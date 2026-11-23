@@ -1,0 +1,30 @@
+# 1 MB blocks, each written at both ends: first with the default limit, then told it may have 400 MB
+phi.BigHeap:Program
+{
+	int got: 0;
+	ptr<u8> blocks[atmost 400];
+	call Take: 400;
+	log 'the default: ' (got >= 120 and got < 128) '\n';
+
+	call Heap.Limit: 419430400;
+	call Take: 300;
+	bln kept: true;
+	while int i: 0; i < got; i++;
+		if blocks:i:0 is not (i as u8) or blocks:i:1048575 is not 7
+			kept is false;
+		;;
+	;;
+	log 'past 124 MB: ' got ' MB, each kept ' kept '\n';
+	exit 0;
+
+	[Take: int upto: 0;]
+		while got < upto
+			ptr<u8> block: new u8[1048576];
+			if block is 0 break;
+			block:0 is got as u8;
+			block:1048575 is 7;
+			blocks++ block;
+			got++;
+		;;
+	[end]
+}

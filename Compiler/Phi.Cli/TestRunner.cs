@@ -237,6 +237,19 @@ namespace Phi.Cli
         /// </summary>
         static readonly Regex TakesUpTo = new(@"^#\s*takes up to (\d+) seconds\b", RegexOptions.Multiline);
 
+        /// <summary>
+        /// A test whose machine needs more memory than QEMU's 128 MB (a program with a big heap)
+        /// says so with this comment: "# needs N MB of memory: why".
+        /// </summary>
+        static readonly Regex NeedsMemory = new(@"^#\s*needs (\d+) MB of memory\b", RegexOptions.Multiline);
+
+        /// <summary>The machine's memory for a test: what it asks for, or --memory's (null: QEMU's own).</summary>
+        static int? MemoryFor(string phiFile)
+        {
+            Match m = NeedsMemory.Match(File.ReadAllText(phiFile));
+            return m.Success && int.TryParse(m.Groups[1].Value, out int mb) ? Math.Min(Math.Max(mb, Qemu.MemoryMb ?? 0), Qemu.MaxMemoryMb) : null;
+        }
+
         /// <summary>The time a test gets: what --timeout gives, or more if the test asks for it.</summary>
         static TimeSpan TimeFor(string phiFile, TimeSpan timeout)
         {
@@ -495,7 +508,7 @@ namespace Phi.Cli
                 var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
                 HeadlessResult partial = Qemu.RunHeadless(build.ImagePath, timeout,
                     output => lines.All(l => Normalize(output).Contains(l)), input,
-                    screenshots: Path.GetDirectoryName(build.ImagePath), disk: mode?.Disk, where: true);
+                    screenshots: Path.GetDirectoryName(build.ImagePath), disk: mode?.Disk, where: true, memoryMb: MemoryFor(phiFile));
                 string text = Normalize(partial.Serial);
                 var missing = lines.Where(l => !text.Contains(l)).ToList();
                 if (keepOutput) File.WriteAllText(actualFile, text);
@@ -508,7 +521,7 @@ namespace Phi.Cli
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
                 expected == null ? null : output => Normalize(output).Contains(expected), input, recording,
-                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null, disk: mode?.Disk, where: true);
+                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null, disk: mode?.Disk, where: true, memoryMb: MemoryFor(phiFile));
 
             string actual = Normalize(run.Serial);
             if (keepOutput) File.WriteAllText(actualFile, actual);

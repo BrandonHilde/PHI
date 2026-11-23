@@ -68,7 +68,7 @@ namespace Phi.Cli
         // forwards: host port for each guest TCP port, which 127.0.0.1:host reaches (an input
         // script's tls lines), on the user network
         // disk: ide, virtio or nvme, in place of DiskKind
-        static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null,
+        static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null, int? memoryMb = null,
                                         IReadOnlyDictionary<int, int>? forwards = null, string? disk = null)
         {
             var args = new List<string>
@@ -86,7 +86,7 @@ namespace Phi.Cli
                 "-no-reboot", // a triple fault stops QEMU instead of looping forever
                 "-fw_cfg", $"name=opt/phi/zone,string={(int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes}",
             });
-            if (MemoryMb is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
+            if ((memoryMb ?? MemoryMb) is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
             // the other cores wait in the BIOS until a kernel starts them (proc.cores)
             if (Cores > 1) args.AddRange(new[] { "-smp", Cores.ToString() });
             return args;
@@ -200,13 +200,13 @@ namespace Phi.Cli
                                                  IReadOnlyList<string>? input = null, string? recordTo = null,
                                                  string? screenshots = null, bool countInstructions = false,
                                                  int? profilePort = null, IReadOnlyList<string>? network = null,
-                                                 string? disk = null, bool where = false)
+                                                 string? disk = null, bool where = false, int? memoryMb = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
             // a guest port the script reaches over TLS (tls PORT ...) is forwarded from a free one here
             Dictionary<int, int>? forwards = input?.Select(InputScript.TlsPort).OfType<int>().Distinct().ToDictionary(g => g, _ => FreePort());
-            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, forwards, disk);
+            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, memoryMb, forwards, disk);
             if (countInstructions) args.AddRange(CountInstructions);
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
             int? wherePort = where ? FreePort() : null;

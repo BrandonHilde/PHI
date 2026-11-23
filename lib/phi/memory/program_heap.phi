@@ -6,7 +6,8 @@
 # A program that uses new or free gets this file automatically. The heap starts
 # empty, right above the program's stack (0x40400000), and grows when nothing in
 # it fits: it asks the kernel for more with OS.Grow, at least 64 KB at a time, up
-# to most_bytes (below), and up to what the system has: 124 MB on PHI OS. Blocks are
+# to the program's limit (Limit, below: 128 MB in a 32-bit program unless it says
+# otherwise), and up to what the system has free. Blocks are
 # kept in address order, each with a header, so Free can
 # merge a block with free neighbors; free blocks are also on lists by size, and
 # Alloc takes the first that fits from them and splits it, as the kernel's heap
@@ -53,11 +54,17 @@ phi.Heap:Program
 	const u32 USED: 1;                       # handed out
 	const u32 KEPT: 2;                       # freed, and waiting on heap_kept for the next of its size
 
-	# The most the heap grows to, which the program decides: `Heap.most_bytes is 600000000;`
+	# The most the heap grows to, which the program decides: `call Heap.Limit: 600000000;`
 	# lets it have 600 MB, and a smaller number holds it to less. 0 is the default: 128 MB in a
 	# 32-bit program, which leaves the rest of its 4 GB of addresses to everything else, and no
-	# limit but the system's in a 64-bit one. The system can always give less than this.
+	# limit but the system's in a 64-bit one. The system can always give less than this: on
+	# PHI OS, what the machine has free (the kernel uses at most 1 GB of RAM).
 	u64 most_bytes: 0;
+
+	# the most the heap may grow to, in bytes (0: the default); what it has already stays
+	[Limit: u64 bytes: 0;]
+		most_bytes is bytes;
+	[end]
 
 	ptr<HeapBlock> heap_first: 0;
 	ptr<HeapBlock> heap_last: 0;

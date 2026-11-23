@@ -3140,8 +3140,10 @@ once.
 **Objects and `new` work in a program too.** Its heap
 ([memory.program_heap](../lib/phi/memory/program_heap.phi), added automatically) starts
 empty and grows when nothing in it fits, asking the kernel for at least 64 KB at a time,
-up to 124 MB (and only while the kernel has memory to spare). How far it may grow is the
-program's to say: `Heap.most_bytes is 600000000;` (see below for Linux, Windows and macOS). `new`
+up to 128 MB (and only while the kernel has memory to spare). How far it may grow is the
+program's to say: `call Heap.Limit: 600000000;` lets it have 600 MB, as much as the machine
+has free (the kernel uses up to 1 GB of RAM: `phi run --memory 1024`), and works the same on
+Linux, Windows and macOS (below). `new`
 gives 0 when there's no more, and an object that can't get memory ends the program with
 `PHI: out of memory for a new object on line N`. Freeing a pointer `new` didn't give out
 ends it with -1. All of it goes back to the kernel when the program ends. A freed block
@@ -3346,7 +3348,7 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number. Both count in milliseconds on every system: a Windows program asks for its timer to step by 1 ms (`timeBeginPeriod`, from `winmm.dll`), since it would otherwise step by 15.6 ms, and its clock is `timeGetTime` |
 | `OS.Now` → | the date and time, as seconds since 1970 (UTC): Linux's `time`, Windows' `GetSystemTimeAsFileTime` |
 | `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename`, `OS.ListFolder` | files and folders, by that system's paths (relative to the folder it runs in). A `FileInfo`'s name is whole here, not 8.3. `OS.FileSize` on a file of 2 GB or more is an error, as an `int` can't hold its size |
-| `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed), up to `Heap.most_bytes`: 0, the default, is 128 MB in a 32-bit program and the system's own limit in a 64-bit one. A program sets it to have more or less (`Heap.most_bytes is 600000000;`); a 32-bit Windows program has room for up to 1 GB |
+| `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed), up to the program's limit: 0, the default, is 128 MB in a 32-bit program and the system's own limit in a 64-bit one. A program sets it to have more or less (`call Heap.Limit: 600000000;`, or `Heap.most_bytes is 600000000;` as in 1.0); a 32-bit Windows program has room for up to 1 GB |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
 | `OS.ClearScreen` | clears the terminal |
 | `net.sockets`' `Udp`, `Tcp` and `Net` | the system's own sockets (Linux's, or Winsock): UDP and TCP to any address, listening and accepting, each call never waiting as on PHI OS. `Net.Address` is the address the machine reaches the internet from (or 127.0.0.1). A program's sockets are its own: a number that isn't one it opened is refused. `Net.Start` and `Net.Wait` are there as in a kernel (true if the system's network is there; a millisecond's sleep), so code that calls them moves by its `use` line too |
