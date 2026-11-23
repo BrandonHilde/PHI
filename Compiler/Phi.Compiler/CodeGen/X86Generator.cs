@@ -7401,6 +7401,24 @@ namespace Phi.Compiler.CodeGen
                 _ => reversed ? "fdivr" : "fdiv",
             };
             Emit($"{instruction} {FloatMemory(e)}");
+            EmitFloatToF64();
+        }
+
+        /// <summary>
+        /// st0 made an f64. The FPU rounds a result's fraction to an f64's 53 bits (its control
+        /// word says to), but keeps its own exponent's range, from 2^-16382 to 2^16383: until
+        /// 2026-11-22 1e300 * 1e300 was 1e600 until it was stored, and printed so, or divided
+        /// back to 1e300, where an f64 (and every other system) has inf; and 1e-300 * 1e-300
+        /// was 1e-600, not 0. Through memory and back it's an f64 again, as stored values are.
+        /// (A result that's subnormal as an f64 is rounded twice, to 53 bits and then to fewer,
+        /// which can differ by a bit from rounding once, as SSE does; one exactly halfway, rarely.)
+        /// </summary>
+        void EmitFloatToF64()
+        {
+            Emit("sub esp, 8");
+            Emit("fstp qword [esp]");
+            Emit("fld qword [esp]           ; (an f64's range: see EmitFloatToF64)");
+            Emit("add esp, 8");
         }
 
         /// <summary>Where an e that IsFloatInMemory is, as an instruction's operand (qword [x]); st0 waits while the place is found.</summary>
@@ -7547,6 +7565,7 @@ namespace Phi.Compiler.CodeGen
                         BinaryOp.Multiply => "fmulp st1, st0",
                         _ => "fdivp st1, st0",
                     });
+                    EmitFloatToF64();
                     return;
             }
 

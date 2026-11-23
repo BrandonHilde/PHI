@@ -1,0 +1,21 @@
+# runs only in 32 and 64 bits: f64 is a 32-bit kernel's and a program's
+# An f64 worked out and used without being stored has an f64's range too. In x86 code the FPU
+# does the work, and it rounds each result's fraction to an f64's but kept its own exponent's
+# range, so until 2026-11-22 1e300 * 1e300 was 1e600 until it was stored: printed, returned,
+# compared or divided back (to 1e300), where ARM, SSE and a stored f64 have inf. And
+# 1e-300 * 1e-300 was 1e-600, not 0. Found with Float.Exp: 710.0, printed.
+phi.FloatRange:Library
+{
+	f64 a: 1e300;
+	f64 tiny: 1e-300;
+	f64 stored: a * a;
+	log 'stored: ' stored '\n';
+	log 'printed: ' (a * a) ' ' (-a * a) '\n';
+	log 'returned: ' (Big: a) '\n';
+	log 'compared: ' (a * a > 1e308) ' ' (a * a / a) ' ' (a * a - a * a) '\n';
+	log 'tiny: ' (tiny * tiny) ' ' (tiny * tiny * 1e300) ' ' (tiny / a) '\n';
+	log 'sums: ' (a * 1e8 + a * 1e8) ' ' (1.5e308 + 1.5e308 - 1.5e308) '\n';
+
+	[Big: f64 x: 0.0;]
+	[end: x * x]
+}

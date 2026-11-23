@@ -1,0 +1,6 @@
+stored: inf
+printed: inf -inf
+returned: inf
+compared: 1 inf nan
+tiny: 0 0 0
+sums: inf inf
