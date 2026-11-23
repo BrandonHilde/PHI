@@ -10,6 +10,10 @@
 #   call got is Tls.Read: buffer max;    # bytes; 0 once the server has closed; -1 on an error
 #   call Tls.Close;
 #
+# Connect can name the protocols to speak over TLS (ALPN), the one wanted most first:
+# Tls.Connect: address 443 'example.com' 'h2 http/1.1'; Tls.protocol is then the one the
+# server chose ('' if it chose none).
+#
 # One connection at a time, which waits for the server as it goes (as net.tcp's Connect,
 # Write and Read do). The protocol itself is net.tls13's: this gives it what TCP brings
 # and sends what it makes. The server's certificate is checked there: it must be for
@@ -27,6 +31,7 @@ phi.Tls:Kernel
 	str error: [100];                     # why Connect, Read or Write failed
 	u32 alert: 0;                         # the alert the server sent, if it sent one
 	u32 suite: 0;                         # the cipher suite the server chose
+	str protocol: [100];                  # the protocol the server chose (ALPN), or ''
 	bln verified: false;                  # the server's certificate was checked, and is good
 	u32 offer: 3;                         # suites to offer: 1 AES-128-GCM, 2 ChaCha20-Poly1305, 3 both
 
@@ -35,16 +40,18 @@ phi.Tls:Kernel
 	TlsSession tls_session;
 
 	# connect and do the handshake; host is the server's name, or its address written out
-	# (what its certificate must be for)
-	[Connect: u32 address: 0; u32 port: 0; ptr<u8> host: 0;]
+	# (what its certificate must be for); protocols: what to speak over TLS (ALPN), between
+	# spaces, as 'h2 http/1.1'
+	[Connect: u32 address: 0; u32 port: 0; ptr<u8> host: 0; ptr<u8> protocols: 0;]
 		call Close;
 		error is '';
 		alert is 0;
 		suite is 0;
+		protocol is '';
 		verified is false;
 		tls_session.offer is offer;
 		tls_open is true;
-		if not (Tls13.Client: addr tls_session host) return (Tls.Failed);
+		if not (Tls13.Client: addr tls_session host protocols) return (Tls.Failed);
 		tls_connection is (Tcp.Connect: address port);
 		if tls_connection < 0
 			error is 'could not connect';
@@ -60,6 +67,7 @@ phi.Tls:Kernel
 		if tls_session.failed or not flushed return (Tls.Failed);
 		suite is tls_session.suite;
 		verified is tls_session.verified;
+		protocol is tls_session.protocol;
 	[end: true]
 
 	# send data; length, or -1 if the connection failed

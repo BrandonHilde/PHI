@@ -4,7 +4,8 @@
 # root, joined in memory. The handshake, data both ways (a little, then 40000 bytes),
 # close_notify; then a client that wants another host, one that trusts nothing, one that
 # offers only ChaCha20-Poly1305, and a byte changed on the way, each of which must fail
-# (or, for ChaCha20, work); and a server with a P-384 key.
+# (or, for ChaCha20, work); a server with a P-384 key; and protocols agreed over TLS (ALPN):
+# the server's first the client has, none named on either side, none in common.
 use net.tls13;
 
 phi.TlsMemory:Library
@@ -165,15 +166,33 @@ phi.TlsMemory:Library
 	call Tls13.Free: addr client;
 	call Tls13.Free: addr server;
 
+	# ALPN: the server's order wins; a side that names none agrees none; none in common fails
+	call Start: 'phi.test' 3 0 'http/1.1 h2' 'h2 http/1.1';
+	log 'alpn: ' client.connected ' ' server.connected ' [' client.protocol '] [' server.protocol ']\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+	call Start: 'phi.test' 3 0 'h2 http/1.1' '';
+	log 'alpn, a server that names none: ' client.connected ' ' server.connected ' [' client.protocol '] [' server.protocol ']\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+	call Start: 'phi.test' 3 0 '' 'h2';
+	log 'alpn, a client that names none: ' client.connected ' ' server.connected ' [' client.protocol '] [' server.protocol ']\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+	call Start: 'phi.test' 3 0 'spdy/3 x' 'h2 http/1.1';
+	log 'alpn, none in common: ' client.connected ' ' server.connected ' (' client.error '; ' server.error ')\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+
 	# a fresh pair, joined until they're connected (or one fails)
-	[Start: ptr<u8> host: 0; u32 offer: 3; ptr<TlsIdentity> id: 0;]
+	[Start: ptr<u8> host: 0; u32 offer: 3; ptr<TlsIdentity> id: 0; ptr<u8> client_speaks: 0; ptr<u8> server_speaks: 0;]
 		if id is 0
 			id is addr identity;
 		;;
 		client.offer is offer;
 		server.offer is 3;
-		call Tls13.Client: addr client host;
-		call Tls13.Server: addr server id;
+		call Tls13.Client: addr client host client_speaks;
+		call Tls13.Server: addr server id server_speaks;
 		rounds is 0;
 		while rounds < 20 and not (client.connected and server.connected) and not client.failed and not server.failed
 			call Shuttle;

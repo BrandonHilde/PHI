@@ -33,22 +33,25 @@ phi.Secure:Library
 {
 	lock crypto;                # one thread at a time in net.tls13 and crypto.*
 
-	# link = the server's side of TLS on connection c, showing identity; false if there's no memory for it
-	[Accept: ptr<TlsLink> link: 0; int c: -1; ptr<TlsIdentity> identity: 0;]
+	# link = the server's side of TLS on connection c, showing identity; false if there's no
+	# memory for it. protocols: what it speaks over TLS (ALPN), between spaces, the one it
+	# would rather have first (link.session.protocol says which was agreed)
+	[Accept: ptr<TlsLink> link: 0; int c: -1; ptr<TlsIdentity> identity: 0; ptr<u8> protocols: 0;]
 		link.connection is c;
 		bln ok: false;
 		locked crypto
-			ok is (Tls13.Server: addr link.session identity);
+			ok is (Tls13.Server: addr link.session identity protocols);
 		;;
 	[end: ok]
 
 	# link = a client's side of TLS on connection c, to host (what its certificate must be
-	# for); false if there's no memory for it
-	[Connect: ptr<TlsLink> link: 0; int c: -1; ptr<u8> host: 0;]
+	# for); false if there's no memory for it. protocols: what it speaks over TLS (ALPN), as
+	# 'h2 http/1.1' (link.session.protocol says which the server chose)
+	[Connect: ptr<TlsLink> link: 0; int c: -1; ptr<u8> host: 0; ptr<u8> protocols: 0;]
 		link.connection is c;
 		bln ok: false;
 		locked crypto
-			ok is (Tls13.Client: addr link.session host);
+			ok is (Tls13.Client: addr link.session host protocols);
 		;;
 	[end: ok]
 

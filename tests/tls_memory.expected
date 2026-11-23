@@ -15,3 +15,7 @@ nothing trusted: 0 (the server's certificate: no trusted root signed the chain; 
 changed on the way: 0 (a record failed its integrity check; the other side sent alert 20)
 p-384 identity: 1 1 
 p-384: 1 1, verified: 1 
+alpn: 1 1 [h2] [h2]
+alpn, a server that names none: 1 1 [] []
+alpn, a client that names none: 1 1 [] []
+alpn, none in common: 0 0 (no protocol in common with the other side (ALPN, alert 120); no protocol in common with the client (ALPN))

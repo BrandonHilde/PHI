@@ -26,6 +26,13 @@
 # are encrypted with AES-128-GCM or ChaCha20-Poly1305, SHA-256 throughout. No session
 # resumption, early data, HelloRetryRequest or client certificates.
 #
+# Either side can name the protocols it speaks over TLS (ALPN, RFC 7301), between spaces, in
+# the order it would rather have them: Tls13.Client: addr s 'example.com' 'h2 http/1.1', and
+# Tls13.Server: addr s addr identity 'h2 http/1.1'. The server takes the first of its own
+# that the client offers, and s.protocol says which (on both sides, once connected); it's ''
+# if either named none. A server whose list has none of the client's fails the handshake
+# (alert 120), as RFC 7301 asks.
+#
 # s.error says why a session failed; the other side is sent an alert saying so too.
 # Each session has its own buffers on the heap (about 80 KB while it shakes hands, 70 KB
 # after), which Free gives back.
@@ -98,6 +105,8 @@ struct.TlsSession
 
 	ptr<TlsIdentity> identity;  # (a server) what it shows
 	str host: [255];            # (a client) who the server must be
+	str protocols: [100];       # protocols (ALPN) it speaks over TLS, between spaces, the one it would rather have first
+	str protocol: [100];        # the one agreed, once the server has said ('' if none was)
 	Certificate chain[4];       # (a client) the server's certificates, its own first
 	u32 chain_count;
 	ptr<u8> chain_der;          # a copy of its Certificate message, which chain points into
@@ -153,6 +162,8 @@ phi.Tls13:Library
 	const u32 ALERT_UNEXPECTED_MESSAGE: 10;
 	const u32 ALERT_RECORD_OVERFLOW: 22;
 	const u32 ALERT_BAD_MAC: 20;
+	const u32 ALERT_ILLEGAL_PARAMETER: 47;
+	const u32 ALERT_NO_APPLICATION_PROTOCOL: 120;
 
 	# shared by every session: each call finishes with them before it returns
 	ptr<u8> tls_build: 0;                 # a handshake message being made (HANDSHAKE_MAX bytes, made once)
@@ -160,6 +171,7 @@ phi.Tls13:Library
 	u8 tls_empty_hash[32];
 	u8 tls_zeros[32];
 	u8 tls_scratch[48];
+	u8 tls_protocols[104];                # a session's protocols as ALPN lists them
 	u8 tls_finished_key[32];
 	u8 tls_verify[32];
 	u8 tls_shared[32];
@@ -177,11 +189,13 @@ phi.Tls13:Library
 	# ---- starting
 
 	# s, a client of host (the name the certificate must be for: a DNS name or an IPv4
-	# address), with its ClientHello ready to send; false if there's no memory for it
-	[Client: ptr<TlsSession> s: 0; ptr<u8> host: 0;]
+	# address), with its ClientHello ready to send; false if there's no memory for it.
+	# protocols: what it speaks over TLS (ALPN), between spaces, as 'h2 http/1.1'
+	[Client: ptr<TlsSession> s: 0; ptr<u8> host: 0; ptr<u8> protocols: 0;]
 		if not (Tls13.Begin: s false) return false;
 		if (Text.Length: host) > s.host.max return (Tls13.Fail: s 'the host name is too long' ALERT_INTERNAL_ERROR);
 		s.host is host;
+		if not (Tls13.SetProtocols: s protocols) return false;
 		s.stage is CLIENT_WAITING_FOR_HELLO;
 		s.chain_count is 0;
 		s.chain_der is new u8[HANDSHAKE_MAX];
@@ -190,13 +204,64 @@ phi.Tls13:Library
 	[end: not s.failed]
 
 	# s, a server showing identity, waiting for a ClientHello; false if there's no memory
-	# for it, or the identity isn't ready
-	[Server: ptr<TlsSession> s: 0; ptr<TlsIdentity> identity: 0;]
+	# for it, or the identity isn't ready. protocols: what it speaks over TLS (ALPN), between
+	# spaces, the one it would rather have first
+	[Server: ptr<TlsSession> s: 0; ptr<TlsIdentity> identity: 0; ptr<u8> protocols: 0;]
 		if not (Tls13.Begin: s true) return false;
 		if not identity.ready return (Tls13.Fail: s 'the server has no identity (Tls13.Identity)' ALERT_INTERNAL_ERROR);
+		if not (Tls13.SetProtocols: s protocols) return false;
 		s.identity is identity;
 		s.stage is SERVER_WAITING_FOR_HELLO;
 	[end: true]
+
+	# the protocols s speaks over TLS (ALPN): none if names is 0 or ''; false if they're too
+	# long, or one is longer than ALPN's 255 bytes
+	[SetProtocols: ptr<TlsSession> s: 0; ptr<u8> names: 0;]
+		if names is 0 return true;
+		if (Text.Length: names) > s.protocols.max return (Tls13.Fail: s 'the protocols named are too long' ALERT_INTERNAL_ERROR);
+		s.protocols is names;
+	[end: true]
+
+	# the protocols s speaks, as ALPN lists them (each a byte of its length, then its name),
+	# written at to; the bytes written
+	[ProtocolList: ptr<TlsSession> s: 0; ptr<u8> to: 0;]
+		ptr<u8> names: addr s.protocols;
+		u32 w: 0;
+		u32 i: 0;
+		while names:i is not 0
+			if names:i is ' '
+				i++;
+			;;
+			else
+				u32 start: i;
+				while names:i is not 0 and names:i is not ' '
+					i++;
+				;;
+				to:w is i - start;
+				call Bytes.Copy: to + w + 1 names + start i - start;
+				w++ 1 + i - start;
+			;;
+		;;
+	[end: w]
+
+	# whether list (ALPN's: each a byte of length and a name, size bytes in all) has the
+	# name at name (length bytes)
+	[ListHas: ptr<u8> list: 0; u32 size: 0; ptr<u8> name: 0; u32 length: 0;]
+		u32 k: 0;
+		while k < size
+			u32 n: list:k;
+			if k + 1 + n > size return false;
+			if n is length and (Bytes.Equal: list + k + 1 name length) return true;
+			k++ 1 + n;
+		;;
+	[end: false]
+
+	# s.protocol is the length bytes at name
+	[Agree: ptr<TlsSession> s: 0; ptr<u8> name: 0; u32 length: 0;]
+		ptr<u8> to: addr s.protocol;
+		call Bytes.Copy: to name length;
+		to:length is 0;
+	[end]
 
 	# a session made new, with its buffers
 	[Begin: ptr<TlsSession> s: 0; bln server: false;]
@@ -599,6 +664,9 @@ phi.Tls13:Library
 		elif s.alert is 70
 			s.error is 'the other side doesn\'t speak TLS 1.3 (alert 70)';
 		;;
+		elif s.alert is 120
+			s.error is 'no protocol in common with the other side (ALPN, alert 120)';
+		;;
 		elif s.alert is 112
 			s.error is 'the server doesn\'t know that host name (alert 112)';
 		;;
@@ -669,6 +737,7 @@ phi.Tls13:Library
 		elif stage is CLIENT_HANDSHAKING
 			if type is ENCRYPTED_EXTENSIONS
 				call Sha256.Update: addr s.transcript message size;
+				call Tls13.ReadEncryptedExtensions: s body length;
 			;;
 			elif type is CERTIFICATE
 				call Sha256.Update: addr s.transcript message size;
@@ -747,6 +816,14 @@ phi.Tls13:Library
 			call Tls13.Put16: h + pos + 7 host_length;
 			call Bytes.Copy: h + pos + 9 host host_length;
 			pos++ 9 + host_length;
+		;;
+		# application_layer_protocol_negotiation: the protocols it speaks, if it named any
+		u32 list: (Tls13.ProtocolList: s h + pos + 6);
+		if list > 0
+			call Tls13.Put16: h + pos 16;
+			call Tls13.Put16: h + pos + 2 list + 2;
+			call Tls13.Put16: h + pos + 4 list;
+			pos++ 6 + list;
 		;;
 		# supported_groups: x25519
 		call Tls13.Put16: h + pos 10;
@@ -827,6 +904,34 @@ phi.Tls13:Library
 		s.encrypting is true;
 		s.decrypting is true;
 		s.stage is CLIENT_HANDSHAKING;
+	[end: true]
+
+	# the server's EncryptedExtensions: the protocol it chose (ALPN), if it chose one, which
+	# must be one this side offered
+	[ReadEncryptedExtensions: ptr<TlsSession> s: 0; ptr<u8> body: 0; u32 length: 0;]
+		if length < 2 return (Tls13.Fail: s 'EncryptedExtensions that can\'t be read' ALERT_DECODE_ERROR);
+		u32 stop: 2 + (Tls13.Get16: body);
+		if stop > length return (Tls13.Fail: s 'EncryptedExtensions that can\'t be read' ALERT_DECODE_ERROR);
+		u32 pos: 2;
+		while pos + 4 <= stop
+			u32 type: (Tls13.Get16: body + pos);
+			u32 size: (Tls13.Get16: body + pos + 2);
+			pos++ 4;
+			if pos + size > stop return (Tls13.Fail: s 'EncryptedExtensions that can\'t be read' ALERT_DECODE_ERROR);
+			if type is 16
+				# one protocol: the list's two bytes of length, then its byte of length and name
+				ptr<u8> e: body + pos;
+				if size < 4 or (Tls13.Get16: e) is not size - 2 or e:2 is not size - 3
+					return (Tls13.Fail: s 'EncryptedExtensions that can\'t be read' ALERT_DECODE_ERROR);
+				;;
+				u32 offered: (Tls13.ProtocolList: s addr tls_protocols);
+				if not (Tls13.ListHas: addr tls_protocols offered e + 3 size - 3)
+					return (Tls13.Fail: s 'the server chose a protocol this side didn\'t offer' ALERT_ILLEGAL_PARAMETER);
+				;;
+				call Tls13.Agree: s e + 3 size - 3;
+			;;
+			pos++ size;
+		;;
 	[end: true]
 
 	# the server's certificates, from its Certificate message (size bytes, header and all):
@@ -958,6 +1063,7 @@ phi.Tls13:Library
 		bln tls13: false;
 		bln have_key: false;
 		bln can_sign: false;
+		bln asked: false;                     # the client named protocols (ALPN)
 		while pos + 4 <= stop
 			u32 type: (Tls13.Get16: body + pos);
 			u32 size: (Tls13.Get16: body + pos + 2);
@@ -992,6 +1098,19 @@ phi.Tls13:Library
 					;;
 				;;
 			;;
+			if type is 16 and size >= 2 and (Tls13.Get16: e) is size - 2
+				# ALPN: the protocols the client speaks; the first of ours it has is the one
+				asked is true;
+				u32 ours: (Tls13.ProtocolList: s addr tls_protocols);
+				u32 k: 0;
+				while k < ours and s.protocol:0 is 0
+					u32 n: tls_protocols:k;
+					if (Tls13.ListHas: e + 2 size - 2 addr tls_protocols:(k + 1) n)
+						call Tls13.Agree: s addr tls_protocols:(k + 1) n;
+					;;
+					k++ 1 + n;
+				;;
+			;;
 			if type is 13 and size >= 2
 				# signature_algorithms: two bytes of length, then two each; ours must be one
 				ptr<TlsIdentity> own: s.identity;
@@ -1009,6 +1128,9 @@ phi.Tls13:Library
 		if s.suite is 0 return (Tls13.Fail: s 'no cipher in common with the client' ALERT_HANDSHAKE_FAILURE);
 		if not have_key return (Tls13.Fail: s 'the client offers no X25519 key' ALERT_HANDSHAKE_FAILURE);
 		if not can_sign return (Tls13.Fail: s 'the client can\'t check a signature by the server\'s key' ALERT_HANDSHAKE_FAILURE);
+		if asked and s.protocols:0 is not 0 and s.protocol:0 is 0
+			return (Tls13.Fail: s 'no protocol in common with the client (ALPN)' ALERT_NO_APPLICATION_PROTOCOL);
+		;;
 
 		# our key, and the ServerHello: the session id echoed, the suite, TLS 1.3, our key
 		call Random.Fill: addr s.private 32;
@@ -1048,11 +1170,24 @@ phi.Tls13:Library
 		s.encrypting is true;
 		s.decrypting is true;
 
-		# EncryptedExtensions (none)
+		# EncryptedExtensions: the protocol chosen (ALPN), if one was
 		h:0 is ENCRYPTED_EXTENSIONS;
-		call Tls13.Put24: h + 1 2;
-		call Tls13.Put16: h + 4 0;
-		call Tls13.SendMessage: s h 6;
+		u32 chosen: s.protocol.len;
+		if chosen is 0
+			call Tls13.Put24: h + 1 2;
+			call Tls13.Put16: h + 4 0;
+			call Tls13.SendMessage: s h 6;
+		;;
+		else
+			call Tls13.Put24: h + 1 2 + 7 + chosen;
+			call Tls13.Put16: h + 4 7 + chosen;
+			call Tls13.Put16: h + 6 16;
+			call Tls13.Put16: h + 8 3 + chosen;
+			call Tls13.Put16: h + 10 1 + chosen;
+			h:12 is chosen;
+			call Bytes.Copy: h + 13 addr s.protocol chosen;
+			call Tls13.SendMessage: s h 13 + chosen;
+		;;
 
 		# Certificate: no request context, then the list
 		ptr<TlsIdentity> me: s.identity;
