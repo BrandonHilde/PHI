@@ -4,48 +4,107 @@ namespace Phi.Cli
 {
     /// <summary>
     /// Makes a FAT16 partition from a folder on the host (the program's rootfs), for the disk
-    /// image of a 32-bit kernel. Names must be 8.3 (up to 8 characters, a dot, up to 3), as
-    /// PHI's FAT16 driver doesn't read long names.
+    /// image of a 32-bit kernel: 16 MB unless asked for more (phi build --disk-mb). Names must be
+    /// 8.3 (up to 8 characters, a dot, up to 3), as PHI's FAT16 driver doesn't read long names.
     /// </summary>
     public static class FatImage
     {
         public const int SectorSize = 512;
 
-        /// <summary>Where the partition starts on the disk (1 MB in), and its size (16 MB).</summary>
+        /// <summary>Where the partition starts on the disk (1 MB in), and its size unless asked for another.</summary>
         public const int PartitionStart = 2048;
-        public const int PartitionSectors = 32768;
+        public const int DefaultMegabytes = 16;
+        public const int PartitionSectors = DefaultMegabytes * 2048;
 
-        public const int SectorsPerCluster = 4;   // 2 KB clusters
+        /// <summary>
+        /// The sizes a partition can be: from 16 MB (FAT16 needs 4,085 clusters, and smaller
+        /// would be FAT12's) to 2047 MB (65,524 clusters of 32 KB, FAT16's most).
+        /// </summary>
+        public const int MinMegabytes = 16, MaxMegabytes = 2047;
+
         public const int ReservedSectors = 1;     // just the partition's boot sector
         public const int FatCount = 2;
         public const int RootEntries = 512;
-        public const int SectorsPerFat = 32;      // room for 8192 cluster entries
 
         const int EntrySize = 32;
-        const int ClusterBytes = SectorsPerCluster * SectorSize;
-        const int FatStart = ReservedSectors;
-        const int RootStart = FatStart + FatCount * SectorsPerFat;
-        const int RootSectors = RootEntries * EntrySize / SectorSize;
-        const int DataStart = RootStart + RootSectors;
-        public const int ClusterCount = (PartitionSectors - DataStart) / SectorsPerCluster;
+        const int MostClusters = 65524;
 
         const ushort EndOfChain = 0xFFFF;
         const byte AttrDirectory = 0x10, AttrArchive = 0x20, AttrVolumeLabel = 0x08;
 
+        /// <summary>
+        /// A FAT16 partition's shape, as its boot sector says it: phi's own for a size (For), or
+        /// what a kept disk has (Read), which may be another size, or made by another tool.
+        /// </summary>
+        public sealed record Layout(int Sectors, int SectorsPerCluster, int Reserved, int Fats, int SectorsPerFat, int Roots)
+        {
+            public int ClusterBytes => SectorsPerCluster * SectorSize;
+            public int FatStart => Reserved;
+            public int RootStart => FatStart + Fats * SectorsPerFat;
+            public int RootSectors => (Roots * EntrySize + SectorSize - 1) / SectorSize;
+            public int DataStart => RootStart + RootSectors;
+            public int ClusterCount => (Sectors - DataStart) / SectorsPerCluster;
+            public int Megabytes => (int)((long)Sectors * SectorSize / (1024 * 1024));
+
+            /// <summary>
+            /// phi's own for a partition of megabytes: 2 KB clusters (and twice, four times ... as
+            /// big where FAT16's 65,524 clusters would be too few), 512 root entries, two FATs.
+            /// </summary>
+            public static Layout For(int megabytes)
+            {
+                int sectors = megabytes * 2048;
+                int rootSectors = RootEntries * EntrySize / SectorSize;
+                int perCluster = 4;
+                while ((sectors - ReservedSectors - rootSectors) / perCluster > MostClusters) perCluster *= 2;
+                // the FATs' size from the clusters there would be without them (a few more than there are)
+                int estimate = (sectors - ReservedSectors - rootSectors) / perCluster;
+                int perFat = ((estimate + 2) * 2 + SectorSize - 1) / SectorSize;
+                return new Layout(sectors, perCluster, ReservedSectors, FatCount, perFat, RootEntries);
+            }
+
+            /// <summary>What partition p's boot sector says, or null (why says why) if it isn't FAT16 as PHI reads it.</summary>
+            public static Layout? Read(byte[] p, out string why)
+            {
+                why = "";
+                if (p.Length < SectorSize || p[510] != 0x55 || p[511] != 0xAA) { why = "it has no FAT16 boot sector"; return null; }
+                int bytesPerSector = BitConverter.ToUInt16(p, 0x0B);
+                int sectors = BitConverter.ToUInt16(p, 0x13);
+                if (sectors == 0) sectors = (int)BitConverter.ToUInt32(p, 0x20);
+                var layout = new Layout(sectors, p[0x0D], BitConverter.ToUInt16(p, 0x0E), p[0x10], BitConverter.ToUInt16(p, 0x16), BitConverter.ToUInt16(p, 0x11));
+                if (bytesPerSector != SectorSize || layout.SectorsPerCluster == 0 || layout.Fats == 0 || layout.SectorsPerFat == 0
+                    || (long)sectors * SectorSize > p.Length || layout.ClusterCount < 4085 || layout.ClusterCount > MostClusters
+                    || layout.SectorsPerFat * SectorSize < (layout.ClusterCount + 2) * 2)
+                {
+                    why = "its boot sector doesn't describe a FAT16 partition that fits it";
+                    return null;
+                }
+                return layout;
+            }
+        }
+
         sealed class State
         {
-            public readonly byte[] Partition = new byte[PartitionSectors * SectorSize];
-            public readonly ushort[] Fat = new ushort[ClusterCount + 2];
+            public readonly Layout L;
+            public readonly byte[] Partition;
+            public readonly ushort[] Fat;
             public int NextCluster = 2;
             public readonly List<string> Errors = new();
             public Func<string, byte[]?>? CompileProgram;
+
+            public State(Layout layout)
+            {
+                L = layout;
+                Partition = new byte[layout.Sectors * SectorSize];
+                Fat = new ushort[layout.ClusterCount + 2];
+            }
         }
 
         /// <param name="rootfs">The folder to copy in, or null for an empty file system.</param>
         /// <param name="compileProgram">Turns a .phi file into a user program, stored as NAME.BIN.</param>
-        public static byte[] Build(string? rootfs, List<string> errors, Func<string, byte[]?>? compileProgram = null)
+        /// <param name="megabytes">The partition's size: MinMegabytes to MaxMegabytes.</param>
+        public static byte[] Build(string? rootfs, List<string> errors, Func<string, byte[]?>? compileProgram = null, int megabytes = DefaultMegabytes)
         {
-            State state = NewState();
+            State state = NewState(Layout.For(megabytes));
             state.CompileProgram = compileProgram;
 
             var root = new List<byte[]> { VolumeLabel() };
@@ -53,27 +112,28 @@ namespace Phi.Cli
             return Finish(state, root, rootfs ?? "the root folder", errors);
         }
 
-        static State NewState()
+        static State NewState(Layout layout)
         {
-            var state = new State();
+            var state = new State(layout);
             state.Fat[0] = 0xFFF8; // media descriptor: fixed disk
             state.Fat[1] = EndOfChain;
-            WriteBootSector(state.Partition);
+            WriteBootSector(state.Partition, layout);
             return state;
         }
 
         /// <summary>Writes the root directory and both FATs.</summary>
         static byte[] Finish(State state, List<byte[]> root, string rootName, List<string> errors)
         {
-            if (root.Count > RootEntries)
-                state.Errors.Add($"{rootName} has {root.Count - 1} entries, but the root directory holds at most {RootEntries - 1}");
+            Layout l = state.L;
+            if (root.Count > l.Roots)
+                state.Errors.Add($"{rootName} has {root.Count - 1} entries, but the root directory holds at most {l.Roots - 1}");
             else
                 for (int i = 0; i < root.Count; i++)
-                    root[i].CopyTo(state.Partition, RootStart * SectorSize + i * EntrySize);
+                    root[i].CopyTo(state.Partition, l.RootStart * SectorSize + i * EntrySize);
 
-            for (int copy = 0; copy < FatCount; copy++)
+            for (int copy = 0; copy < l.Fats; copy++)
                 for (int i = 0; i < state.Fat.Length; i++)
-                    BitConverter.GetBytes(state.Fat[i]).CopyTo(state.Partition, (FatStart + copy * SectorsPerFat) * SectorSize + i * 2);
+                    BitConverter.GetBytes(state.Fat[i]).CopyTo(state.Partition, (l.FatStart + copy * l.SectorsPerFat) * SectorSize + i * 2);
 
             errors.AddRange(state.Errors);
             return state.Partition;
@@ -96,12 +156,25 @@ namespace Phi.Cli
         /// are replaced and new ones added, and everything else the kernel saved stays as it was.
         /// </summary>
         /// <param name="refreshed">gets the path of each program that was replaced or added</param>
+        /// <remarks>
+        /// The kept partition keeps its own size and shape (one made bigger by phi build --disk-mb,
+        /// or by another tool, is read as its boot sector says), whatever size the new one is.
+        /// </remarks>
         public static byte[] RefreshPrograms(byte[] kept, byte[] built, List<string> refreshed, List<string> errors)
         {
-            List<Item> root = ReadDirectory(kept, RootDirectory(kept));
-            Merge(root, ReadDirectory(built, RootDirectory(built)), "", refreshed);
+            Layout? keptLayout = Layout.Read(kept, out string why);
+            Layout? builtLayout = Layout.Read(built, out string builtWhy);
+            if (keptLayout == null || builtLayout == null)
+            {
+                errors.Add(keptLayout == null ? $"the kept disk can't be brought up to date: {why}" : $"the new disk: {builtWhy}");
+                return kept;
+            }
+            List<Item> root = ReadDirectory(kept, keptLayout, RootDirectory(kept, keptLayout));
+            Merge(root, ReadDirectory(built, builtLayout, RootDirectory(built, builtLayout)), "", refreshed);
 
-            State state = NewState();
+            State state = NewState(keptLayout);
+            // (its own boot sector, as another tool may have written it: only phi's numbers matter to PHI)
+            kept.AsSpan(0, SectorSize).CopyTo(state.Partition);
             List<byte[]> entries = WriteItems(state, root, parentCluster: 0);
             return Finish(state, entries, "the kept disk", errors);
         }
@@ -135,10 +208,10 @@ namespace Phi.Cli
             return ext.Length == 0 ? stem : stem + "." + ext;
         }
 
-        static byte[] RootDirectory(byte[] p) => p.AsSpan(RootStart * SectorSize, RootEntries * EntrySize).ToArray();
+        static byte[] RootDirectory(byte[] p, Layout l) => p.AsSpan(l.RootStart * SectorSize, l.Roots * EntrySize).ToArray();
 
         /// <summary>The items in a directory's entries (dir), whose data is in the partition p.</summary>
-        static List<Item> ReadDirectory(byte[] p, byte[] dir)
+        static List<Item> ReadDirectory(byte[] p, Layout l, byte[] dir)
         {
             var items = new List<Item>();
             for (int at = 0; at + EntrySize <= dir.Length; at += EntrySize)
@@ -151,11 +224,11 @@ namespace Phi.Cli
                 int first = BitConverter.ToUInt16(dir, at + 26);
                 if ((attributes & AttrDirectory) != 0)
                 {
-                    item.Children = ReadDirectory(p, ReadChain(p, first, int.MaxValue));
+                    item.Children = ReadDirectory(p, l, ReadChain(p, l, first, int.MaxValue));
                 }
                 else if ((attributes & AttrVolumeLabel) == 0)
                 {
-                    item.Data = ReadChain(p, first, (int)BitConverter.ToUInt32(dir, at + 28));
+                    item.Data = ReadChain(p, l, first, (int)BitConverter.ToUInt32(dir, at + 28));
                 }
                 items.Add(item);
             }
@@ -163,15 +236,15 @@ namespace Phi.Cli
         }
 
         /// <summary>The data of a cluster chain, up to size bytes. p is the whole partition.</summary>
-        static byte[] ReadChain(byte[] p, int cluster, int size)
+        static byte[] ReadChain(byte[] p, Layout l, int cluster, int size)
         {
             var data = new List<byte>();
             var seen = new HashSet<int>();
-            while (cluster >= 2 && cluster < ClusterCount + 2 && data.Count < size && seen.Add(cluster))
+            while (cluster >= 2 && cluster < l.ClusterCount + 2 && data.Count < size && seen.Add(cluster))
             {
-                int sector = DataStart + (cluster - 2) * SectorsPerCluster;
-                data.AddRange(p.AsSpan(sector * SectorSize, Math.Min(ClusterBytes, size - data.Count)).ToArray());
-                cluster = BitConverter.ToUInt16(p, FatStart * SectorSize + cluster * 2);
+                long sector = l.DataStart + (long)(cluster - 2) * l.SectorsPerCluster;
+                data.AddRange(p.AsSpan((int)(sector * SectorSize), Math.Min(l.ClusterBytes, size - data.Count)).ToArray());
+                cluster = BitConverter.ToUInt16(p, l.FatStart * SectorSize + cluster * 2);
             }
             return data.ToArray();
         }
@@ -186,7 +259,7 @@ namespace Phi.Cli
                 int first = 0;
                 if (item.Children != null)
                 {
-                    int clusters = Math.Max(1, ((item.Children.Count + 2) * EntrySize + ClusterBytes - 1) / ClusterBytes);
+                    int clusters = Math.Max(1, ((item.Children.Count + 2) * EntrySize + state.L.ClusterBytes - 1) / state.L.ClusterBytes);
                     first = AllocateChain(state, clusters, ShortToPath(item.Name));
                     if (first == 0) continue;
 
@@ -202,7 +275,7 @@ namespace Phi.Cli
                 }
                 else if (item.Data.Length > 0)
                 {
-                    first = AllocateChain(state, (item.Data.Length + ClusterBytes - 1) / ClusterBytes, ShortToPath(item.Name));
+                    first = AllocateChain(state, (item.Data.Length + state.L.ClusterBytes - 1) / state.L.ClusterBytes, ShortToPath(item.Name));
                     if (first == 0) continue;
                     WriteChain(state, first, item.Data);
                 }
@@ -212,35 +285,43 @@ namespace Phi.Cli
             return entries;
         }
 
-        /// <summary>Partition table entry 1 in the boot sector (offset 446): type 0x04, FAT16 under 32 MB.</summary>
-        public static void WritePartitionEntry(byte[] image)
+        /// <summary>
+        /// Partition table entry 1 in the boot sector (offset 446), for a partition of sectors:
+        /// type 0x04 (FAT16 under 32 MB) or 0x06 (FAT16 from 32 MB), which PHI's driver both reads.
+        /// </summary>
+        public static void WritePartitionEntry(byte[] image, int sectors = PartitionSectors)
         {
             byte[] entry = new byte[16];
             entry[0] = 0x00;                            // not the boot partition (we boot from the disk itself)
             entry[1] = 0xFE; entry[2] = 0xFF; entry[3] = 0xFF;  // CHS start: "use LBA"
-            entry[4] = 0x04;                            // FAT16, under 32 MB
+            entry[4] = (byte)(sectors < 65536 ? 0x04 : 0x06);
             entry[5] = 0xFE; entry[6] = 0xFF; entry[7] = 0xFF;  // CHS end
             BitConverter.GetBytes((uint)PartitionStart).CopyTo(entry, 8);
-            BitConverter.GetBytes((uint)PartitionSectors).CopyTo(entry, 12);
+            BitConverter.GetBytes((uint)sectors).CopyTo(entry, 12);
             entry.CopyTo(image, 446);
         }
 
-        static void WriteBootSector(byte[] p)
+        /// <summary>Where a disk image's partition starts and its sectors, from its partition table's first entry.</summary>
+        public static (int Start, int Sectors) PartitionOf(byte[] image) =>
+            ((int)BitConverter.ToUInt32(image, 446 + 8), (int)BitConverter.ToUInt32(image, 446 + 12));
+
+        static void WriteBootSector(byte[] p, Layout l)
         {
             p[0] = 0xEB; p[1] = 0x3C; p[2] = 0x90;      // jump over the parameters (not bootable)
             Encoding.ASCII.GetBytes("PHI     ").CopyTo(p, 3);
             BitConverter.GetBytes((ushort)SectorSize).CopyTo(p, 0x0B);
-            p[0x0D] = SectorsPerCluster;
-            BitConverter.GetBytes((ushort)ReservedSectors).CopyTo(p, 0x0E);
-            p[0x10] = FatCount;
-            BitConverter.GetBytes((ushort)RootEntries).CopyTo(p, 0x11);
-            BitConverter.GetBytes((ushort)PartitionSectors).CopyTo(p, 0x13);
+            p[0x0D] = (byte)l.SectorsPerCluster;
+            BitConverter.GetBytes((ushort)l.Reserved).CopyTo(p, 0x0E);
+            p[0x10] = (byte)l.Fats;
+            BitConverter.GetBytes((ushort)l.Roots).CopyTo(p, 0x11);
+            // (the total in the 16-bit field when it fits, else in the 32-bit one)
+            BitConverter.GetBytes((ushort)(l.Sectors < 65536 ? l.Sectors : 0)).CopyTo(p, 0x13);
             p[0x15] = 0xF8;                             // fixed disk
-            BitConverter.GetBytes((ushort)SectorsPerFat).CopyTo(p, 0x16);
+            BitConverter.GetBytes((ushort)l.SectorsPerFat).CopyTo(p, 0x16);
             BitConverter.GetBytes((ushort)63).CopyTo(p, 0x18);   // sectors per track (unused)
             BitConverter.GetBytes((ushort)16).CopyTo(p, 0x1A);   // heads (unused)
             BitConverter.GetBytes((uint)PartitionStart).CopyTo(p, 0x1C);
-            BitConverter.GetBytes((uint)0).CopyTo(p, 0x20);      // total sectors fit in the 16-bit field
+            BitConverter.GetBytes((uint)(l.Sectors < 65536 ? 0 : l.Sectors)).CopyTo(p, 0x20);
             p[0x24] = 0x80;                             // drive number
             p[0x26] = 0x29;                             // extended boot signature
             BitConverter.GetBytes(0x50484921u).CopyTo(p, 0x27);  // volume serial
@@ -287,7 +368,7 @@ namespace Phi.Cli
                 {
                     // the subfolder's entries go in clusters of their own, starting with . and ..
                     int count = Directory.EnumerateFileSystemEntries(path).Count(p => !Path.GetFileName(p).StartsWith('.')) + 2;
-                    int clusters = Math.Max(1, (count * EntrySize + ClusterBytes - 1) / ClusterBytes);
+                    int clusters = Math.Max(1, (count * EntrySize + state.L.ClusterBytes - 1) / state.L.ClusterBytes);
                     int first = AllocateChain(state, clusters, path);
                     if (first == 0) continue;
 
@@ -309,7 +390,7 @@ namespace Phi.Cli
                     int first = 0;
                     if (data.Length > 0)
                     {
-                        first = AllocateChain(state, (data.Length + ClusterBytes - 1) / ClusterBytes, path);
+                        first = AllocateChain(state, (data.Length + state.L.ClusterBytes - 1) / state.L.ClusterBytes, path);
                         if (first == 0) continue;
                         WriteChain(state, first, data);
                     }
@@ -361,9 +442,10 @@ namespace Phi.Cli
         /// <returns>the first cluster, or 0 if the partition is full</returns>
         static int AllocateChain(State state, int clusters, string forPath)
         {
-            if (state.NextCluster + clusters > ClusterCount + 2)
+            if (state.NextCluster + clusters > state.L.ClusterCount + 2)
             {
-                state.Errors.Add($"{forPath}: the {PartitionSectors * SectorSize / (1024 * 1024)} MB file system is full");
+                state.Errors.Add($"{forPath}: the {state.L.Megabytes} MB file system is full" +
+                                 (state.L.Megabytes < MaxMegabytes ? " (phi build --disk-mb makes a bigger one)" : ""));
                 return 0;
             }
 
@@ -377,10 +459,11 @@ namespace Phi.Cli
         static void WriteChain(State state, int first, byte[] data)
         {
             int cluster = first;
-            for (int offset = 0; offset < data.Length; offset += ClusterBytes)
+            Layout l = state.L;
+            for (int offset = 0; offset < data.Length; offset += l.ClusterBytes)
             {
-                int sector = DataStart + (cluster - 2) * SectorsPerCluster;
-                Array.Copy(data, offset, state.Partition, sector * SectorSize, Math.Min(ClusterBytes, data.Length - offset));
+                long sector = l.DataStart + (long)(cluster - 2) * l.SectorsPerCluster;
+                Array.Copy(data, offset, state.Partition, sector * SectorSize, Math.Min(l.ClusterBytes, data.Length - offset));
                 cluster = state.Fat[cluster];
             }
         }

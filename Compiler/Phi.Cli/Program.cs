@@ -26,7 +26,7 @@ const string Usage = """
                                        --stack small|normal|large|huge (or bytes): the main stack a
                                            Windows program reserves (1 MB unless it says); Linux uses
                                            the system's, and a thread's is Threads.Start's StackSize
-      phi run  <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
+      phi run  <file.phi> [--debug] [--keep-disk] [--disk-mb <MB>] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
                                            --target windows or windows64 with --debug (on build too)
                                            writes a NAME.pdb, so a debugger steps through its PHI lines;
@@ -36,6 +36,8 @@ const string Usage = """
                                            (programs from the rootfs are updated on it; on build
                                            too, which makes or updates that disk, NAME.kept.img,
                                            for whoever starts QEMU themselves),
+                                           --disk-mb makes a kernel's disk bigger than 16 MB, up to 2047
+                                           (FAT16's most; on build too; a kept disk keeps its own size),
                                            --memory gives the machine more (or less) than 128 MB, up to 1024;
                                            with NAME.machines next to it, it and the machines listed there
                                            boot together on one network, each in a window;
@@ -238,6 +240,15 @@ static int Execute(string[] args)
         return (int)((bytes + 0xFFFF) / 0x10000 * 0x10000);
     }
 
+    void DiskSizeOption()
+    {
+        string? disk = Option("--disk-mb");
+        if (disk == null) return;
+        if (!int.TryParse(disk, out int mb) || mb < FatImage.MinMegabytes || mb > FatImage.MaxMegabytes)
+            throw new ArgumentException($"--disk-mb takes the size of a kernel's disk in MB, from {FatImage.MinMegabytes} to {FatImage.MaxMegabytes} (FAT16's most)");
+        Builder.DiskMegabytes = mb;
+    }
+
     void MemoryOption()
     {
         string? memory = Option("--memory");
@@ -300,6 +311,7 @@ static int Execute(string[] args)
                 CoresOption();
                 NicOption();
                 DiskOption();
+                DiskSizeOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
                 if (programArguments.Count > 0 && host == Phi.Compiler.Host.PhiOS)
                     throw new ArgumentException("arguments after -- are for a program built with --target linux or windows");
@@ -464,6 +476,7 @@ static int Execute(string[] args)
                 CoresOption();
                 NicOption();
                 DiskOption();
+                DiskSizeOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
                 double percent = DefaultTolerance;

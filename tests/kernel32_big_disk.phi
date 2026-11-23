@@ -1,0 +1,40 @@
+# needs a 64 MB disk: more than phi build's 16 MB holds
+# A kernel's disk made bigger (phi build --disk-mb 64; here, this test's comment): PHI's FAT16
+# driver takes the size from the disk, so a 20 MB file fits, in clusters past the 8,160 a
+# 16 MB disk has, and reads back. Until 2026-11-22 phi build made 16 MB disks only, and PHI OS
+# made its own 64 MB one with mtools (its FINDINGS #26).
+use fs.fat16;
+
+phi.KernelBigDisk:Kernel
+{
+	const u32 MB: 1048576;
+	u32 spare: (Fat.FreeClusters);
+	debug 'more than 16 MB free: ' (spare > 8192) '\n';
+
+	ptr<u8> chunk: new u8[MB];
+	bln wrote: true;
+	while u32 n: 0; n < 20; n++;
+		while u32 i: 0; i < MB; i++;
+			chunk:i is (i + n * 7) & 255;
+		;;
+		if n is 0
+			wrote is wrote and (Fat.WriteFile: 'BIG.DAT' chunk MB);
+		;;
+		else
+			wrote is wrote and (Fat.Append: 'BIG.DAT' chunk MB);
+		;;
+	;;
+	debug 'wrote 20 MB: ' wrote ' ' ((Fat.FileSize: 'BIG.DAT') is 20 * MB) '\n';
+
+	# its last megabyte, read back, is the last one written
+	u32 got: (Fat.ReadAt: 'BIG.DAT' 19 * MB chunk MB);
+	bln same: got is MB;
+	while u32 i: 0; i < MB; i++;
+		if chunk:i is not ((i + 19 * 7) & 255)
+			same is false;
+		;;
+	;;
+	debug 'read back: ' same '\n';
+	debug 'clusters used: ' (spare - (Fat.FreeClusters)) '\n';
+	debug 'deleted: ' (Fat.Delete: 'BIG.DAT') ' ' ((Fat.FreeClusters) is spare) '\n';
+}

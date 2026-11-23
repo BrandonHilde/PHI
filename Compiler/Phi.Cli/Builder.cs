@@ -70,7 +70,8 @@ namespace Phi.Cli
         /// </param>
         /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
-                                        bool listing = false, Host host = Host.PhiOS, bool debug = false, int stack = 0, bool v2 = false, bool app = false)
+                                        bool listing = false, Host host = Host.PhiOS, bool debug = false, int stack = 0, bool v2 = false, bool app = false,
+                                        int? diskMegabytes = null)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             Phi.Compiler.CodeGen.X86Generator.MainStack = stack;
@@ -150,7 +151,7 @@ namespace Phi.Cli
             }
 
             byte[]? image = compiled.Units.Any(u => u.Kind == UnitKind.Kernel)
-                ? Layout32(compiled, phiFile, outDir, result, FindRootfs(phiFile))
+                ? Layout32(compiled, phiFile, outDir, result, FindRootfs(phiFile), diskMegabytes ?? DiskMegabytes)
                 : Layout16(compiled, outDir, result);
 
             if (image != null) File.WriteAllBytes(result.ImagePath, image);
@@ -340,7 +341,7 @@ namespace Phi.Cli
             return Directory.Exists(shared) ? shared : null;
         }
 
-        static byte[]? Layout32(CompileResult compiled, string kernelFile, string outDir, BuildResult result, string? rootfs)
+        static byte[]? Layout32(CompileResult compiled, string kernelFile, string outDir, BuildResult result, string? rootfs, int diskMegabytes)
         {
             AsmUnit kernel = compiled.Units.Single(u => u.Kind == UnitKind.Kernel);
             AsmUnit stage1 = compiled.BootStages.Single(u => u.Name == "stage1");
@@ -364,18 +365,18 @@ namespace Phi.Cli
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
             var fsErrors = new List<string>();
-            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors, result.Warnings, result.Listing));
+            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors, result.Warnings, result.Listing), diskMegabytes);
             if (fsErrors.Count > 0)
             {
                 result.Errors.AddRange(fsErrors);
                 return null;
             }
 
-            var image = new byte[(FatImage.PartitionStart + FatImage.PartitionSectors) * SectorSize];
+            var image = new byte[FatImage.PartitionStart * SectorSize + partition.Length];
             stage1Bin.CopyTo(image, 0);
             stage2Bin.CopyTo(image, SectorSize);
             kernelBin.CopyTo(image, (1 + Stage2Sectors) * SectorSize);
-            FatImage.WritePartitionEntry(image);
+            FatImage.WritePartitionEntry(image, partition.Length / SectorSize);
             partition.CopyTo(image, FatImage.PartitionStart * SectorSize);
             return image;
         }
@@ -654,13 +655,18 @@ namespace Phi.Cli
         /// </summary>
         /// <param name="refreshed">gets the path of each program that was replaced or added</param>
         /// <returns>the kept image, next to the new one as NAME.kept.img</returns>
+        /// <remarks>
+        /// A kept disk keeps its size: one made with another --disk-mb, or bigger by another tool
+        /// (PHI OS's tools/disk.sh), is brought up to date as it is. Until 2026-11-22 one that wasn't
+        /// the size phi makes was replaced, and everything the kernel had saved on it was lost.
+        /// </remarks>
         public static string KeepDisk(string image, out bool fresh, List<string> refreshed, List<string> errors)
         {
             string kept = Path.ChangeExtension(image, ".kept.img");
             byte[] built = File.ReadAllBytes(image);
             int partition = FatImage.PartitionStart * SectorSize;
 
-            fresh = !File.Exists(kept) || new FileInfo(kept).Length != built.Length || built.Length <= partition;
+            fresh = !File.Exists(kept) || built.Length <= partition;
             if (fresh)
             {
                 File.Copy(image, kept, overwrite: true);
@@ -668,13 +674,25 @@ namespace Phi.Cli
             }
 
             byte[] old = File.ReadAllBytes(kept);
-            byte[] merged = FatImage.RefreshPrograms(old[partition..], built[partition..], refreshed, errors);
+            var (start, sectors) = old.Length > 512 ? FatImage.PartitionOf(old) : (0, 0);
+            if (start != FatImage.PartitionStart || (long)(start + sectors) * SectorSize > old.Length)
+            {
+                errors.Add($"{kept}: its partition table doesn't have a FAT16 partition {FatImage.PartitionStart} sectors in, as phi's do; " +
+                           "move it aside to have a new one made (what it holds stays in it)");
+                return kept;
+            }
+            byte[] merged = FatImage.RefreshPrograms(old[partition..(partition + sectors * SectorSize)], built[partition..], refreshed, errors);
             if (errors.Count > 0) return kept;
 
+            // the new boot sectors and kernel, with the kept partition's own entry
             built.AsSpan(0, partition).CopyTo(old);
+            FatImage.WritePartitionEntry(old, sectors);
             merged.CopyTo(old, partition);
             File.WriteAllBytes(kept, old);
             return kept;
         }
+
+        /// <summary>The size of the FAT16 partition a kernel's disk gets (phi build --disk-mb); a kept disk keeps its own.</summary>
+        public static int DiskMegabytes { get; set; } = FatImage.DefaultMegabytes;
     }
 }

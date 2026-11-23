@@ -14,9 +14,12 @@ namespace Phi.Compiler.Tests
         static ushort U16(byte[] b, int at) => BitConverter.ToUInt16(b, at);
         static uint U32(byte[] b, int at) => BitConverter.ToUInt32(b, at);
 
-        const int RootOffset = (FatImage.ReservedSectors + FatImage.FatCount * FatImage.SectorsPerFat) * FatImage.SectorSize;
-        const int DataOffset = RootOffset + FatImage.RootEntries * 32;
-        const int ClusterBytes = FatImage.SectorsPerCluster * FatImage.SectorSize;
+        // (a partition's shape, read from its boot sector here, apart from FatImage's own reading)
+        static int RootOffset(byte[] p) => (U16(p, 0x0E) + p[0x10] * U16(p, 0x16)) * 512;
+        static int DataOffset(byte[] p) => RootOffset(p) + U16(p, 0x11) * 32;
+        static int ClusterBytes(byte[] p) => p[0x0D] * 512;
+        static int TotalSectors(byte[] p) => U16(p, 0x13) != 0 ? U16(p, 0x13) : (int)U32(p, 0x20);
+        static int Clusters(byte[] p) => (TotalSectors(p) - DataOffset(p) / 512) / p[0x0D];
 
         /// <summary>(name, attributes, cluster, size) of every entry in a directory's bytes.</summary>
         static List<(string Name, byte Attributes, int Cluster, uint Size)> Entries(byte[] p, int offset, int count)
@@ -33,10 +36,10 @@ namespace Phi.Compiler.Tests
         static byte[] ReadChain(byte[] p, int cluster, uint size)
         {
             var data = new List<byte>();
-            int fat = FatImage.ReservedSectors * FatImage.SectorSize;
+            int fat = U16(p, 0x0E) * 512;
             while (cluster >= 2 && cluster < 0xFFF8)
             {
-                data.AddRange(p.Skip(DataOffset + (cluster - 2) * ClusterBytes).Take(ClusterBytes));
+                data.AddRange(p.Skip(DataOffset(p) + (cluster - 2) * ClusterBytes(p)).Take(ClusterBytes(p)));
                 cluster = U16(p, fat + cluster * 2);
             }
             return data.Take((int)size).ToArray();
@@ -51,11 +54,47 @@ namespace Phi.Compiler.Tests
             Assert.Empty(errors);
             Assert.Equal(FatImage.PartitionSectors * 512, p.Length);
             Assert.Equal(512, U16(p, 0x0B));
-            Assert.Equal(FatImage.SectorsPerCluster, p[0x0D]);
+            Assert.Equal(4, p[0x0D]);                           // 2 KB clusters
             Assert.Equal(FatImage.RootEntries, U16(p, 0x11));
             Assert.Equal("FAT16   ", Encoding.ASCII.GetString(p, 0x36, 8));
             Assert.Equal(0xAA55, U16(p, 510));
-            Assert.InRange(FatImage.ClusterCount, 4085, 65524); // the range that makes it FAT16
+            Assert.InRange(Clusters(p), 4085, 65524);           // the range that makes it FAT16
+        }
+
+        [Theory]
+        [InlineData(16, 4, 0x04)]
+        [InlineData(64, 4, 0x06)]
+        [InlineData(160, 8, 0x06)]       // (2 KB clusters would be too many for FAT16)
+        public void ABiggerDiskIsFat16AsBig(int megabytes, int perCluster, byte type)
+        {
+            var errors = new List<string>();
+            byte[] p = FatImage.Build(null, errors, null, megabytes);
+            Assert.Empty(errors);
+            Assert.Equal(megabytes * 1024 * 1024, p.Length);
+            Assert.Equal(megabytes * 2048, TotalSectors(p));
+            Assert.Equal(perCluster, p[0x0D]);
+            Assert.InRange(Clusters(p), 4085, 65524);
+            Assert.True(U16(p, 0x16) * 512 >= (Clusters(p) + 2) * 2, "each FAT has room for every cluster");
+            Assert.Equal(FatImage.Layout.For(megabytes), FatImage.Layout.Read(p, out _));
+            byte[] image = new byte[512];
+            FatImage.WritePartitionEntry(image, p.Length / 512);
+            Assert.Equal(type, image[446 + 4]);
+            Assert.Equal((uint)(megabytes * 2048), U32(image, 446 + 12));
+        }
+
+        [Fact]
+        public void FilesOnABiggerDiskReadBack()
+        {
+            Directory.CreateDirectory(Path.Combine(root, "docs"));
+            File.WriteAllText(Path.Combine(root, "docs", "notes.txt"), "on a 160 MB disk");
+            byte[] big = new byte[3 * 1024 * 1024];
+            new Random(7).NextBytes(big);
+            File.WriteAllBytes(Path.Combine(root, "big.dat"), big);
+            var errors = new List<string>();
+            byte[] p = FatImage.Build(root, errors, null, 160);
+            Assert.Empty(errors);
+            Assert.Equal("on a 160 MB disk", Read(p, "DOCS/NOTES.TXT"));
+            Assert.Equal(Convert.ToHexString(big), Convert.ToHexString(Encoding.Latin1.GetBytes(Read(p, "BIG.DAT", Encoding.Latin1)!)));
         }
 
         [Fact]
@@ -71,7 +110,7 @@ namespace Phi.Compiler.Tests
             byte[] p = FatImage.Build(root, errors);
             Assert.Empty(errors);
 
-            var rootEntries = Entries(p, RootOffset, FatImage.RootEntries);
+            var rootEntries = Entries(p, RootOffset(p), FatImage.RootEntries);
             Assert.Equal(new[] { "PHI DISK   ", "DOCS       ", "README  TXT" }, rootEntries.Select(e => e.Name));
 
             var readme = rootEntries.Single(e => e.Name == "README  TXT");
@@ -79,7 +118,7 @@ namespace Phi.Compiler.Tests
 
             var docs = rootEntries.Single(e => e.Name == "DOCS       ");
             Assert.Equal(0x10, docs.Attributes);
-            var docsEntries = Entries(p, DataOffset + (docs.Cluster - 2) * ClusterBytes, ClusterBytes / 32);
+            var docsEntries = Entries(p, DataOffset(p) + (docs.Cluster - 2) * ClusterBytes(p), ClusterBytes(p) / 32);
             Assert.Equal(new[] { ".          ", "..         ", "BIG     BIN" }, docsEntries.Select(e => e.Name));
             Assert.Equal(docs.Cluster, docsEntries[0].Cluster);
             Assert.Equal(0, docsEntries[1].Cluster);   // .. of a top-level folder is the root
@@ -111,21 +150,22 @@ namespace Phi.Compiler.Tests
         }
 
         /// <summary>A disk image: a first byte standing for the kernel, then the partition made from folder.</summary>
-        static byte[] Image(byte kernel, string folder)
+        static byte[] Image(byte kernel, string folder, int megabytes = FatImage.DefaultMegabytes)
         {
             var errors = new List<string>();
-            byte[] partition = FatImage.Build(folder, errors);
+            byte[] partition = FatImage.Build(folder, errors, null, megabytes);
             Assert.Empty(errors);
             var image = new byte[FatImage.PartitionStart * FatImage.SectorSize + partition.Length];
             image[0] = kernel;
+            FatImage.WritePartitionEntry(image, partition.Length / FatImage.SectorSize);
             partition.CopyTo(image, FatImage.PartitionStart * FatImage.SectorSize);
             return image;
         }
 
         /// <summary>The contents of a file in a partition, by its 8.3 names (DOCS/README.TXT), or null.</summary>
-        static string? Read(byte[] p, string path)
+        static string? Read(byte[] p, string path, Encoding? encoding = null)
         {
-            var entries = Entries(p, RootOffset, FatImage.RootEntries);
+            var entries = Entries(p, RootOffset(p), U16(p, 0x11));
             string[] parts = path.Split('/');
             for (int i = 0; ; i++)
             {
@@ -134,8 +174,8 @@ namespace Phi.Compiler.Tests
                 int found = entries.FindIndex(e => e.Name == name11);
                 if (found < 0) return null;
                 var e = entries[found];
-                if (i == parts.Length - 1) return Encoding.ASCII.GetString(ReadChain(p, e.Cluster, e.Size));
-                entries = Entries(ReadChain(p, e.Cluster, ClusterBytes), 0, ClusterBytes / 32);
+                if (i == parts.Length - 1) return (encoding ?? Encoding.ASCII).GetString(ReadChain(p, e.Cluster, e.Size));
+                entries = Entries(ReadChain(p, e.Cluster, (uint)ClusterBytes(p)), 0, ClusterBytes(p) / 32);
             }
         }
 
@@ -200,11 +240,46 @@ namespace Phi.Compiler.Tests
             var errors = new List<string>();
             byte[] p = FatImage.Build(root, errors, _ => new byte[] { 1, 2, 3 });
             Assert.Empty(errors);
-            int at = RootOffset;
+            int at = RootOffset(p);
             while (System.Text.Encoding.ASCII.GetString(p, at, 11) != "HELLO   BIN") at += 32;
             int date = BitConverter.ToUInt16(p, at + 24);
             Assert.Equal(DateTime.Now.Year, 1980 + (date >> 9));
             Assert.Equal(DateTime.Now.Month, (date >> 5) & 15);
+        }
+
+        [Fact]
+        public void AKeptDiskOfAnotherSizeKeepsItsSizeAndFiles()
+        {
+            int partition = FatImage.PartitionStart * FatImage.SectorSize;
+            // a 64 MB kept disk (phi build --disk-mb 64, or PHI OS's tools/disk.sh) with a user's file
+            string before = Path.Combine(root, "before");
+            Directory.CreateDirectory(Path.Combine(before, "apps"));
+            File.WriteAllText(Path.Combine(before, "notes.txt"), "saved by the kernel");
+            File.WriteAllText(Path.Combine(before, "apps", "paint.bin"), "paint 1");
+            string image = Path.Combine(root, "os.img");
+            File.WriteAllBytes(image, Image(1, before, 64));
+            var refreshed = new List<string>();
+            var errors = new List<string>();
+            string kept = Builder.KeepDisk(image, out bool fresh, refreshed, errors);
+            Assert.True(fresh);
+
+            // the new build is phi's 16 MB
+            string after = Path.Combine(root, "after");
+            Directory.CreateDirectory(Path.Combine(after, "apps"));
+            File.WriteAllText(Path.Combine(after, "apps", "paint.bin"), "paint 2");
+            File.WriteAllBytes(image, Image(2, after));
+            Builder.KeepDisk(image, out fresh, refreshed, errors);
+            Assert.False(fresh);
+            Assert.Empty(errors);
+
+            byte[] disk = File.ReadAllBytes(kept);
+            Assert.Equal(partition + 64 * 1024 * 1024, disk.Length);
+            Assert.Equal(2, disk[0]);                                        // the new kernel
+            Assert.Equal((uint)(64 * 2048), U32(disk, 446 + 12));            // its own partition entry
+            byte[] p = disk[partition..];
+            Assert.Equal(64 * 2048, TotalSectors(p));
+            Assert.Equal("saved by the kernel", Read(p, "NOTES.TXT"));
+            Assert.Equal("paint 2", Read(p, "APPS/PAINT.BIN"));
         }
 
         [Fact]

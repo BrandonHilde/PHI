@@ -245,6 +245,15 @@ namespace Phi.Cli
         /// </summary>
         static readonly Regex NeedsMemory = new(@"^#\s*needs (\d+) MB of memory\b", RegexOptions.Multiline);
 
+        /// <summary>A kernel test whose disk is bigger than phi build's 16 MB says so: # needs a 64 MB disk: why.</summary>
+        static readonly Regex NeedsDisk = new(@"^#\s*needs a (\d+) MB disk\b", RegexOptions.Multiline);
+
+        static int? DiskFor(string phiFile)
+        {
+            Match m = NeedsDisk.Match(File.ReadAllText(phiFile));
+            return m.Success ? int.Parse(m.Groups[1].Value) : null;
+        }
+
         /// <summary>The machine's memory for a test: what it asks for, or --memory's (null: QEMU's own).</summary>
         static int? MemoryFor(string phiFile)
         {
@@ -476,7 +485,7 @@ namespace Phi.Cli
                 return RunNetwork(phiFile, machinesFile, timeout, wrapper, keepOutput, mode?.Card);
 
             string outDir = Path.Combine(dir, "build", variant);
-            BuildResult build = Builder.Build(phiFile, outDir, wrapper, listing: true);
+            BuildResult build = Builder.Build(phiFile, outDir, wrapper, listing: true, diskMegabytes: DiskFor(phiFile));
 
             // NAME.errors: the program must fail to compile, with each listed message
             if (File.Exists(errorsFile))
