@@ -1,0 +1,71 @@
+# SHA-1 against its published test vectors (FIPS 180-2's "abc", the 448-bit message, a million
+# 'a's) and against Python's hashlib for the rest: data added in pieces, and a state's digest
+# taken at once.
+use crypto.sha1;
+
+phi.CryptoSha1:Kernel
+{
+	u8 output[20];
+	u8 data[1000];
+	Sha1State s;
+
+	log 'sha1 empty:\n';
+	call Sha1.Hash: addr data 0 addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	log 'sha1 abc:\n';
+	call Sha1.Hash: 'abc' 3 addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	log 'sha1 448 bits:\n';
+	call Sha1.Hash: 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq' 56 addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	# 1000 bytes, added 7 at a time: the block buffer and the length in the padding
+	log 'sha1 1000 bytes in pieces:\n';
+	call Pattern: 1000;
+	call Sha1.Init: addr s;
+	u32 done: 0;
+	while done < 1000
+		u32 piece: 7;
+		if 1000 - done < 7
+			piece is 1000 - done;
+		;;
+		call Sha1.Update: addr s addr data + done piece;
+		done++ piece;
+	;;
+	call Sha1.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	log 'sha1 the same, at once:\n';
+	call Sha1.Hash: addr data 1000 addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	# a million 'a's, 1000 at a time
+	log 'sha1 a million a:\n';
+	while u32 i: 0; i < 1000; i++;
+		data:i is 97;
+	;;
+	call Sha1.Init: addr s;
+	while u32 k: 0; k < 1000; k++;
+		call Sha1.Update: addr s addr data 1000;
+	;;
+	call Sha1.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	# 55, 56 and 64 bytes: where the padding does and doesn't fit in the last block
+	log 'sha1 55, 56, 64 bytes:\n';
+	call Pattern: 64;
+	call Sha1.Hash: addr data 55 addr output;
+	call Bytes.PrintHex: addr output 20;
+	call Sha1.Hash: addr data 56 addr output;
+	call Bytes.PrintHex: addr output 20;
+	call Sha1.Hash: addr data 64 addr output;
+	call Bytes.PrintHex: addr output 20;
+
+	[Pattern: u32 length: 0;]
+		while u32 i: 0; i < length; i++;
+			data:i is (i * 7 + 3) & 0xFF;
+		;;
+	[end]
+}

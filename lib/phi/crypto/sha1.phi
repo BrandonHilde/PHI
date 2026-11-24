@@ -1,0 +1,171 @@
+# SHA-1 (FIPS 180-4): a 20-byte digest of any amount of data. Any kind of program.
+#
+#   use crypto.sha1;
+#   u8 digest[20];
+#   call Sha1.Hash: 'abc' 3 addr digest;
+#
+# For data that arrives in pieces, keep a Sha1State:
+#
+#   Sha1State s;
+#   call Sha1.Init: addr s;
+#   call Sha1.Update: addr s first 100;
+#   call Sha1.Update: addr s second 20;
+#   call Sha1.Final: addr s addr digest;
+#
+# SHA-1 isn't safe against collisions any more: it's here for what still asks for it (a WebSocket's
+# handshake, crypto.subtle.digest('SHA-1'), old checksums), not for signing anything new.
+
+use crypto.bytes;
+
+struct.Sha1State
+{
+	u32 h[5];
+	u8 block[64];
+	u32 used;                   # bytes waiting in block
+	u32 bytes_low;              # how many bytes have been added, as 64 bits
+	u32 bytes_high;
+}
+
+phi.Sha1:Library
+{
+	const u32 DIGEST_SIZE: 20;
+	const u32 BLOCK_SIZE: 64;
+	u32 sha_w[80];
+	Sha1State sha_one;                    # for Hash
+
+	# the digest of length bytes of data
+	[Hash: ptr<u8> data: 0; u32 length: 0; ptr<u8> digest: 0;]
+		call Init: addr sha_one;
+		call Update: addr sha_one data length;
+		call Final: addr sha_one digest;
+	[end]
+
+	[Init: ptr<Sha1State> s: 0;]
+		ptr<u32> h: addr s:0.h;
+		h:0 is 0x67452301;
+		h:1 is 0xEFCDAB89;
+		h:2 is 0x98BADCFE;
+		h:3 is 0x10325476;
+		h:4 is 0xC3D2E1F0;
+		s:0.used is 0;
+		s:0.bytes_low is 0;
+		s:0.bytes_high is 0;
+	[end]
+
+	[Update: ptr<Sha1State> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		u32 total: s:0.bytes_low + length;
+		if total < s:0.bytes_low
+			s:0.bytes_high++;
+		;;
+		s:0.bytes_low is total;
+
+		ptr<u8> block: addr s:0.block;
+		u32 i: 0;
+		while i < length
+			if s:0.used is 0 and length - i >= BLOCK_SIZE
+				# a whole block straight from the data
+				call Compress: addr s:0.h data + i;
+				i++ BLOCK_SIZE;
+			;;
+			else
+				block:(s:0.used) is data:i;
+				s:0.used++;
+				i++;
+				if s:0.used is BLOCK_SIZE
+					call Compress: addr s:0.h block;
+					s:0.used is 0;
+				;;
+			;;
+		;;
+	[end]
+
+	# finish: the digest goes to digest (20 bytes); the state needs Init before reuse
+	[Final: ptr<Sha1State> s: 0; ptr<u8> digest: 0;]
+		u32 bits_high: (s:0.bytes_high << 3) | (s:0.bytes_low >> 29);
+		u32 bits_low: s:0.bytes_low << 3;
+		ptr<u8> block: addr s:0.block;
+
+		# a 1 bit, zeros, then the length in bits in the last 8 bytes of a block
+		u32 pos: s:0.used;
+		block:pos is 0x80;
+		pos++;
+		if pos > 56
+			while pos < BLOCK_SIZE
+				block:pos is 0;
+				pos++;
+			;;
+			call Compress: addr s:0.h block;
+			pos is 0;
+		;;
+		while pos < 56
+			block:pos is 0;
+			pos++;
+		;;
+		call PutBig: block + 56 bits_high;
+		call PutBig: block + 60 bits_low;
+		call Compress: addr s:0.h block;
+
+		ptr<u32> h: addr s:0.h;
+		while u32 i: 0; i < 5; i++;
+			call PutBig: digest + i * 4 h:i;
+		;;
+		s:0.used is 0;
+	[end]
+
+	[PutBig: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 24;
+		p:1 is value >> 16;
+		p:2 is value >> 8;
+		p:3 is value;
+	[end]
+
+	# mix one 64-byte block into the hash
+	[Compress: ptr<u32> h: 0; ptr<u8> m: 0;]
+		unsafe
+			while u32 i: 0; i < 16; i++;
+				u32 pos: i * 4;
+				sha_w:i is ((m:pos << 24) | (m:(pos + 1) << 16) | (m:(pos + 2) << 8) | m:(pos + 3)) as u32;
+			;;
+			while u32 i: 16; i < 80; i++;
+				u32 x: sha_w:(i - 3) ^ sha_w:(i - 8) ^ sha_w:(i - 14) ^ sha_w:(i - 16);
+				sha_w:i is (x << 1) | (x >> 31);
+			;;
+			u32 a: h:0;
+			u32 b: h:1;
+			u32 c: h:2;
+			u32 d: h:3;
+			u32 e: h:4;
+			while u32 i: 0; i < 80; i++;
+				u32 f: 0;
+				u32 k: 0;
+				if i < 20
+					f is (b & c) | ((b ^ 0xFFFFFFFF) & d);
+					k is 0x5A827999;
+				;;
+				elif i < 40
+					f is b ^ c ^ d;
+					k is 0x6ED9EBA1;
+				;;
+				elif i < 60
+					f is (b & c) | (b & d) | (c & d);
+					k is 0x8F1BBCDC;
+				;;
+				else
+					f is b ^ c ^ d;
+					k is 0xCA62C1D6;
+				;;
+				u32 t: ((a << 5) | (a >> 27)) + f + e + k + sha_w:i;
+				e is d;
+				d is c;
+				c is (b << 30) | (b >> 2);
+				b is a;
+				a is t;
+			;;
+			h:0 is h:0 + a;
+			h:1 is h:1 + b;
+			h:2 is h:2 + c;
+			h:3 is h:3 + d;
+			h:4 is h:4 + e;
+		;;
+	[end]
+}
