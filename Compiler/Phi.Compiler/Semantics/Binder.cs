@@ -1212,9 +1212,16 @@ namespace Phi.Compiler.Semantics
         {
             PhiType result = ReturnTypeOf(m);
             return new MethodSignature(m.Parameters.Select(p => p.Type.IsString ? PhiType.Str : p.Type).ToList(),
-                                       result.IsNumeric ? PhiType.Int : result,
+                                       ResultKind(result),
                                        m.Parameters.Select(p => p.TextRef).ToList());
         }
+
+        /// <summary>What a method value's result is, as its type says it: a number of any size is an
+        /// int (as a call by name hands it back in a register), but a pointer or a method value keeps
+        /// its type, which is as wide as an address (it was an int too, and lost its top half in 64-bit
+        /// code).</summary>
+        static PhiType ResultKind(PhiType result) =>
+            result.IsNumeric && !result.IsPointer && !result.IsMethod ? PhiType.Int : result;
 
         // ---------------------------------------------------------------- str results
 
@@ -1543,7 +1550,7 @@ namespace Phi.Compiler.Semantics
                         if (!own.Parameters.Skip(1).SequenceEqual(expected.Parameters.Skip(1)) || !own.Into.Skip(1).SequenceEqual(expected.Into.Skip(1)))
                             Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} has to take what {iface.Name} says: [{InterfaceHeader(wanted)}]");
                         // (numbers, characters and pointers are told apart only where the interface says which)
-                        else if (own.Result != (expected.Result.IsNumeric ? PhiType.Int : expected.Result)
+                        else if ((own.Result.IsNumeric ? PhiType.Int : own.Result) != (expected.Result.IsNumeric ? PhiType.Int : expected.Result)
                                  || wanted.DeclaredResult != null && ReturnTypeOf(m).IsPointer != expected.Result.IsPointer)
                             Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} returns {Returns(ReturnTypeOf(m))}, but {iface.Name}'s {wanted.Name} returns {Returns(expected.Result)}" +
                                                (wanted.DeclaredResult != null ? "" : $" (as {iface.Members[0].Name}.{wanted.Name} does)") + $": every struct with {iface.Name} has to return the same");
@@ -2111,7 +2118,9 @@ namespace Phi.Compiler.Semantics
                         Error(t.Result!.Span, $"a method returns a number, a str or an object, not {A(result)}");
                         return PhiType.Error;
                     }
-                    return PhiType.MethodOf(new MethodSignature(parameters, result.IsNumeric ? PhiType.Int : result, t.ParameterInto.ToList()));
+                    // (a number comes back as an int, whatever its size; a pointer or a method value stays
+                    // what it is, which in 64-bit code is 64 bits)
+                    return PhiType.MethodOf(new MethodSignature(parameters, ResultKind(result), t.ParameterInto.ToList()));
                 }
             }
 

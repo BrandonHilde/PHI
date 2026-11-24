@@ -1,0 +1,44 @@
+# A method called through a method value can return a pointer, whole: in 64-bit code it's 64 bits,
+# not an int's 32 (method<int: ptr<Thing>>). It's a pointer to the same thing on every system.
+struct.Thing
+{
+	int v;
+	method<int: ptr<Thing>> next;
+}
+
+phi.MethodValuesPointers:Program
+{
+	method<int: ptr<Thing>> make: addr Make;
+	ptr<Thing> t: (make: 7);
+	log 'made ' t.v '\n';
+	ptr<Thing> again: (make: 8);
+	log 'two: ' t.v ' ' again.v ', apart: ' (t is not again) '\n';
+
+	# one held in a struct, called through its field
+	t.next is addr Make;
+	ptr<Thing> third: (t.next: 9);
+	log 'through a field: ' third.v '\n';
+
+	# a ptr<u8> result, written to and read back
+	method<int: ptr<u8>> bytes: addr Bytes;
+	ptr<u8> b: (bytes: 4);
+	b:3 is 42;
+	log 'bytes: ' b:0 ' ' b:3 '\n';
+
+	# and given straight to another method
+	log 'passed on: ' (Value: (make: 11)) '\n';
+	exit 0;
+
+	[Make: int v: 0; : ptr<Thing>]
+		ptr<Thing> x: new Thing;
+		x.v is v;
+	[end: x]
+
+	[Bytes: int n: 0; : ptr<u8>]
+		ptr<u8> y: new u8[n];
+		y:0 is n as u8;
+	[end: y]
+
+	[Value: ptr<Thing> p: 0;]
+	[end: p.v]
+}
