@@ -2427,9 +2427,12 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
 
-                // two loops can each declare the same counter: while int i: 0; ...
+                // two loops can each declare the same counter: while int i: 0; ... One after the
+                // other, that is: a loop inside the other's would reset the outer loop's counter, so
+                // that's the error below like any other name declared again in sight of the first
                 if (loopCounters.Contains(decl) && earlier.FirstOrDefault(e => loopCounters.Contains(e.Symbol.Decl)
-                        && e.Symbol.Decl.Type.ToString() == decl.Type.ToString() && e.Symbol.Decl.BufferSize == null).Symbol is VariableSymbol counter)
+                        && e.Symbol.Decl.Type.ToString() == decl.Type.ToString() && e.Symbol.Decl.BufferSize == null
+                        && !block.Within(e.Block)).Symbol is VariableSymbol counter)
                 {
                     decl.Symbol = counter;
                     counter.NeedsInitCode = true;

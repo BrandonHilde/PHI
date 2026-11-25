@@ -378,6 +378,7 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("if c < 2\n int t: 1;\n;;\nelse\n int t: 2;\n;;\nlog t;", "'t' is declared only inside blocks (if, else, while) that have ended here")]
         [InlineData("int t: 0;\nif c < 2\n int t: 1;\n;;", "'t' is already declared in method Test.M; a name can be declared again only in a separate block")]
+        [InlineData("while int q: 0; q < 3; q++;\n while int q: 0; q < 2; q++;\n  c is q;\n ;;\n;;", "'q' is already declared in method Test.M; a name can be declared again only in a separate block")]
         public void BlockScopeErrors(string body, string message) => AssertError(Boot("call M: 1;\n[M: int c: 0;]\n" + body + "\n[end]"), message);
 
         [Fact]
