@@ -342,6 +342,7 @@ namespace Phi.Cli
             string wrapper = program ? "" : ProgramWrapper;
 
             Host? firstHere = null;
+            Host? firstAny = null;
             int built = 0;
             bool macOnly = MacOsOnly.IsMatch(text);
             foreach (Host host in OtherSystems.Where(h => (Only == null || Only == h) && (!macOnly || h == Host.MacOS)))
@@ -350,15 +351,18 @@ namespace Phi.Cli
                 // (not a macOS program: while its generator is being written, most programs don't
                 // build as one yet, and that's not a failure of theirs)
                 if (!host.IsArm()) firstHere ??= host;
+                firstAny ??= host;
                 if (!BuildsFor(phiFile, text + wrapper, host)) continue;
                 built++;
                 yield return new Mode(host.FlagName(), wrapper, Host: host);
             }
             // a program that builds for none of them runs on none, which would pass by saying
-            // nothing: it runs on the first, where its build fails and says why. One that builds
-            // only for systems this computer can't run (a Windows program, on Linux) is a test for
-            // those computers instead
-            if (program && built == 0 && Only == null && !macOnly && firstHere is Host first
+            // nothing: it runs on the first, where its build fails and says why (an x86 system's,
+            // or, on a computer that runs only arm64 ones, as a Mac without a Linux machine to
+            // hand does, that one's: else a test that doesn't compile there passed as 0/0). One that
+            // builds only for systems this computer can't run (a Windows program, on Linux) is a
+            // test for those computers instead
+            if (program && built == 0 && Only == null && !macOnly && (firstHere ?? firstAny) is Host first
                 && !OtherSystems.Any(h => !HostRunner.CanRun(h, out _) && BuildsFor(phiFile, text + wrapper, h)))
                 yield return new Mode(first.FlagName(), wrapper, Host: first);
         }
